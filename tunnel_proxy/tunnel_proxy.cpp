@@ -220,10 +220,10 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		}
 	}
 
-	/*std::map <intptr_t, _BEVINFO*>::iterator iter;
+	std::map <intptr_t, _BEVINFO*>::iterator iter;
 	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
 		if (iter->second->status == 1) {
-			if ((GetTickCount64() - iter->second->tick) > 300000) {
+			if ((GetTickCount64() - iter->second->tick) > 60000) {
 				if (iter->second->proxy_bev != NULL)
 					bufferevent_free(iter->second->proxy_bev);
 				if (iter->second->tunnel_bev != NULL)
@@ -233,7 +233,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 				gBevMap.erase(iter);
 			}
 		}
-	}*/
+	}
 
 	if (manage_bev != NULL) {
 		if (countbevmapidle() < IDLE_TUNNELS_MIN) {

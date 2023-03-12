@@ -47,17 +47,6 @@ struct _BEVINFO
 	struct bufferevent* tunnel_bev;
 };
 
-
-struct _ConnectInfo
-{
-	int event_id;
-	int event_id2;
-	char ip[50];
-	int port;
-};
-
-_ConnectInfo gConnectInfo[2] = { 0 };
-
 struct _PckCmd
 {
 	BYTE head;
@@ -75,7 +64,6 @@ static char manageip[50] = { 0 };
 
 static _BEVINFO* getbevinfomap(intptr_t fd_index);
 static void delbevmap(intptr_t fd_index);
-
 static std::map <intptr_t, _BEVINFO*> gBevMap;
 
 
@@ -86,10 +74,10 @@ int main(int argc, char* argv[])
 	struct event* timeout;
 	struct timeval tv;
 
-	if (argc < 6) {
+	if (argc < 5) {
 		std::cout << std::endl;
 		std::cout << "Usage:" << std::endl;
-		std::cout << "tunnel <manage ip> <manage port> <tunnel ip> <tunnel port>  <ha ip> <ha port>" << std::endl;
+		std::cout << "tunnel <manage ip> <manage port> <tunnel port>  <server-local-ip> <server-local-port>" << std::endl;
 		std::cout << std::endl;
 		system("pause");
 		return -1;
@@ -99,11 +87,11 @@ int main(int argc, char* argv[])
 
 	std::stringstream s;
 	s << argv[2]; s >> portManage; s.clear();
-	s << argv[4]; s >> portProxy; s.clear();
-	s << argv[6]; s >> portServer;
+	s << argv[3]; s >> portProxy; s.clear();
+	s << argv[5]; s >> portServer;
 	memcpy(&manageip, argv[1], sizeof(manageip));
-	memcpy(&proxyip, argv[3], sizeof(proxyip));
-	memcpy(&svrip, argv[5], sizeof(svrip));
+	memcpy(&proxyip, argv[1], sizeof(proxyip));
+	memcpy(&svrip, argv[4], sizeof(svrip));
 
 	gBevMap.clear();
 
@@ -134,7 +122,7 @@ int main(int argc, char* argv[])
 	tv.tv_sec = 1;
 	event_add(timeout, &tv);
 
-	event_base_loop(base, EVLOOP_NO_EXIT_ON_EMPTY);
+	event_base_dispatch(base);
 
 	event_del(timeout);
 	event_free(timeout);
