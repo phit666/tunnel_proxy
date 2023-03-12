@@ -32,8 +32,8 @@
 #include <map>
 #include <vector>
 
-#define IDLE_TUNNELS 100
-#define IDLE_TUNNELS_MIN 90
+static int IDLE_TUNNELS = 100;
+static int IDLE_TUNNELS_MIN = 90;
 
 struct _PckCmd
 {
@@ -84,7 +84,7 @@ static unsigned long long manager_tick = 0;
 
 static std::map <intptr_t, _BEVINFO*> gBevMap;
 
-int main()
+int main(int argc, char* argv[])
 {
 	struct evconnlistener* manage_listener;
 	struct evconnlistener* tunnel_listener;
@@ -93,6 +93,22 @@ int main()
 	struct sockaddr_in sin;
 	struct event* timeout;
 	struct timeval tv;
+
+
+	if (argc < 5) {
+		std::cout << std::endl;
+		std::cout << "Usage:" << std::endl;
+		std::cout << "tunnel_proxy <max-tunnel-counts> <min-tunnel-counts> <manage port> <tunnel port> <proxy port>" << std::endl;
+		std::cout << std::endl;
+		return -1;
+	}
+
+	std::stringstream s;
+	s << argv[3]; s >> manage_port; s.clear();
+	s << argv[4]; s >> tunnel_port; s.clear();
+	s << argv[5]; s >> proxy_port; s.clear();
+	s << argv[1]; s >> IDLE_TUNNELS; s.clear();
+	s << argv[2]; s >> IDLE_TUNNELS_MIN;
 
 	std::signal(SIGINT, signal_handler);
 	gBevMap.clear();
@@ -172,7 +188,7 @@ int main()
 
 	timeout = event_new(base, -1, EV_PERSIST, le_timercb, NULL);
 	evutil_timerclear(&tv);
-	tv.tv_sec = 1;
+	tv.tv_sec = 2;
 	event_add(timeout, &tv);
 
 	event_base_dispatch(base);
@@ -223,29 +239,42 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 	std::map <intptr_t, _BEVINFO*>::iterator iter;
 	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
 		if (iter->second->status == 1) {
-			if ((GetTickCount64() - iter->second->tick) > 60000) {
+			if ((GetTickCount64() - iter->second->tick) >= 180000) {
 				if (iter->second->proxy_bev != NULL)
 					bufferevent_free(iter->second->proxy_bev);
 				if (iter->second->tunnel_bev != NULL)
 					bufferevent_free(iter->second->tunnel_bev);
 				delete iter->second;
-				printf("Idle connection deleted, fd index %d.\n", (int)iter->first);
+				printf("Idle connection (active) deleted, fd index %d.\n", (int)iter->first);
+				gBevMap.erase(iter);
+			}
+		}
+		else if (iter->second->status == 0) {
+			if ((GetTickCount64() - iter->second->tick) >= 60000) {
+				if (iter->second->proxy_bev != NULL)
+					bufferevent_free(iter->second->proxy_bev);
+				if (iter->second->tunnel_bev != NULL)
+					bufferevent_free(iter->second->tunnel_bev);
+				delete iter->second;
+				printf("Idle connection (waiting) deleted, fd index %d.\n", (int)iter->first);
 				gBevMap.erase(iter);
 			}
 		}
 	}
 
 	if (manage_bev != NULL) {
-		if (countbevmapidle() < IDLE_TUNNELS_MIN) {
+		int idlecounts = countbevmapidle();
+		if (idlecounts < IDLE_TUNNELS_MIN) {
 			_PckCmd pMsg = { 0 };
 			pMsg.head = 0xC1;
 			pMsg.len = sizeof(pMsg);
 			pMsg.cmd = 0xA1;
-			pMsg.data = 5;
+			pMsg.data = IDLE_TUNNELS - IDLE_TUNNELS_MIN;
 			if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
 				printf("bufferevent_write Error, %s (%d).\n", __func__, __LINE__);
 				return;
 			}
+			printf("Manager requested for %d tunnels.\n", pMsg.data);
 		}
 	}
 
@@ -332,6 +361,7 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 		bevinfo->tunnel_bev = tunnel_bev;
 		bevinfo->proxy_bev = NULL;
 		bevinfo->status = 0;
+		bevinfo->tick = GetTickCount64();
 
 		gBevMap[fd_index] = bevinfo;
 

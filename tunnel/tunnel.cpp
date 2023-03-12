@@ -79,7 +79,6 @@ int main(int argc, char* argv[])
 		std::cout << "Usage:" << std::endl;
 		std::cout << "tunnel <manage ip> <manage port> <tunnel port>  <server-local-ip> <server-local-port>" << std::endl;
 		std::cout << std::endl;
-		system("pause");
 		return -1;
 	}
 
