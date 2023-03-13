@@ -24,22 +24,11 @@
 #include <event2/event.h>
 #include <event2/thread.h>
 
+#include <chrono>
+#include <ctime>
+
 #include <map>
 #include <vector>
-
-
-struct bufferevent* le_connect(DWORD ip, WORD port, int index);
-DWORD host2ip(const char* hostname);
-static void signal_handler(int signal);
-static void le_proxy_readcb(struct bufferevent*, void*);
-static void le_tunnel_readcb(struct bufferevent*, void*);
-static void le_manage_readcb(struct bufferevent*, void*);
-static void le_eventcb(struct bufferevent*, short, void*);
-static void le_manage_eventcb(struct bufferevent*, short, void*);
-static void le_timercb(evutil_socket_t, short, void*);
-
-struct event_base* base;
-static struct bufferevent* manage_bev = NULL;
 
 struct _BEVINFO
 {
@@ -55,6 +44,20 @@ struct _PckCmd
 	WORD data;
 };
 
+struct bufferevent* le_connect(DWORD ip, WORD port, int index);
+DWORD host2ip(const char* hostname);
+static void signal_handler(int signal);
+static void le_proxy_readcb(struct bufferevent*, void*);
+static void le_tunnel_readcb(struct bufferevent*, void*);
+static void le_manage_readcb(struct bufferevent*, void*);
+static void le_eventcb(struct bufferevent*, short, void*);
+static void le_manage_eventcb(struct bufferevent*, short, void*);
+static void le_timercb(evutil_socket_t, short, void*);
+
+struct event_base* base;
+static struct bufferevent* manage_bev = NULL;
+static unsigned long long manager_tick = 0;
+
 static int portProxy;
 static int portServer;
 static int portManage;
@@ -66,6 +69,10 @@ static _BEVINFO* getbevinfomap(intptr_t fd_index);
 static void delbevmap(intptr_t fd_index);
 static std::map <intptr_t, _BEVINFO*> gBevMap;
 
+#ifndef _WIN32
+unsigned long long
+GetTickCount64();
+#endif
 
 int main(int argc, char* argv[])
 {
@@ -118,7 +125,7 @@ int main(int argc, char* argv[])
 
 	timeout = event_new(base, -1, EV_PERSIST, le_timercb, NULL);
 	evutil_timerclear(&tv);
-	tv.tv_sec = 1;
+	tv.tv_sec = 2;
 	event_add(timeout, &tv);
 
 	event_base_dispatch(base);
@@ -233,6 +240,9 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 			bufferevent_setcb(_bev2, le_tunnel_readcb, NULL, le_eventcb, (void*)fd_index);
 		}
 	}
+	else if (lpMsg->cmd == 0xA2) {
+		manager_tick = GetTickCount64();
+	}
 }
 
 static void
@@ -263,17 +273,28 @@ le_proxy_readcb(struct bufferevent* _bev, void* user_data)
 
 static void le_timercb(evutil_socket_t fd, short event, void* arg)
 {
+	if (manage_bev != NULL && GetTickCount64() - manager_tick >= 10000) {
+		bufferevent_free(manage_bev);
+		manage_bev = NULL;
+		printf("Manager connection deleted.\n");
+	}
+
 	if (manage_bev == NULL) {
 		manage_bev = le_connect(host2ip(manageip), portManage, 0);
 		if (!manage_bev) {
 			printf("le_connect Error, %s (%d).\n", __func__, __LINE__);
 			return;
 		}
+		manager_tick = GetTickCount64();
 		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
 	}
 	else {
-		char buffer[1] = { 0x01 };
-		bufferevent_write(manage_bev, buffer, 1);
+		_PckCmd pMsg = { 0 };
+		pMsg.head = 0xC1;
+		pMsg.len = sizeof(pMsg);
+		pMsg.cmd = 0xA2;
+		pMsg.data = 0;
+		bufferevent_write(manage_bev, (unsigned char *)&pMsg, pMsg.len);
 	}
 }
 
@@ -344,4 +365,12 @@ static void signal_handler(int signal)
 {
 	event_base_loopbreak(base);
 }
+
+#ifndef _WIN32
+unsigned long long
+GetTickCount64()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+#endif
 

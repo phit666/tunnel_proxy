@@ -27,7 +27,6 @@
 
 #include <chrono>
 #include <ctime>
-#include <iostream>
 
 #include <map>
 #include <vector>
@@ -83,6 +82,7 @@ static struct bufferevent* manage_bev = NULL;
 static unsigned long long manager_tick = 0;
 
 static std::map <intptr_t, _BEVINFO*> gBevMap;
+static std::vector <struct bufferevent*> gBevWaitin;
 
 int main(int argc, char* argv[])
 {
@@ -133,8 +133,7 @@ int main(int argc, char* argv[])
 	base = event_base_new();
 #endif
 
-	printf("Using Libevent with backend method %s.\n",
-		event_base_get_method(base));
+	printf("Tunnel Proxy 1.01.3 (Alpha), socket backend is %s.\n", event_base_get_method(base));
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
@@ -212,6 +211,15 @@ int main(int argc, char* argv[])
 
 	gBevMap.clear();
 
+	std::vector <struct bufferevent*>::iterator viter;
+	for (viter = gBevWaitin.begin(); viter != gBevWaitin.end(); viter++) {
+		if (*viter != NULL) {
+			bufferevent_free(*viter);
+		}
+	}
+
+	gBevWaitin.clear();
+
 	if (manage_bev != NULL)
 		bufferevent_free(manage_bev);
 
@@ -229,10 +237,10 @@ int main(int argc, char* argv[])
 static void le_timercb(evutil_socket_t fd, short event, void* arg)
 {
 	if (manage_bev != NULL) {
-		if ((GetTickCount64() - manager_tick) > 5000) {
+		if ((GetTickCount64() - manager_tick) >= 10000) {
 			bufferevent_free(manage_bev);
 			manage_bev = NULL;
-			printf("Idle manager connection deleted.\n");
+			printf("Manager connection deleted.\n");
 		}
 	}
 
@@ -283,9 +291,12 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 static void
 le_manage_readcb(struct bufferevent* _bev, void* user_data)
 {
-	char buffer[255] = { 0 };
+	//char buffer[255] = { 0 };
 	manager_tick = GetTickCount64();
-	int len = bufferevent_read(_bev, buffer, 255);
+	//int len = bufferevent_read(_bev, buffer, 255);
+	if (bufferevent_read_buffer(_bev, bufferevent_get_output(_bev)) == -1) {
+		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+	}
 }
 
 static void
@@ -339,6 +350,8 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 			return;
 		}
 
+		printf("Manager is connected.\n");
+
 		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
 		bufferevent_enable(manage_bev, EV_WRITE);
 		bufferevent_enable(manage_bev, EV_READ);
@@ -368,27 +381,56 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 		bufferevent_setcb(tunnel_bev, le_tunnel_readcb, NULL, le_eventcb, (void*)fd_index);
 		bufferevent_enable(tunnel_bev, EV_READ | EV_WRITE);
 
+		// lets connect the first one in the waiting list to this tunnel
+		std::vector <struct bufferevent*>::iterator iter;
+		for (iter = gBevWaitin.begin(); iter != gBevWaitin.end(); iter++) {
+			if (*iter != NULL) {
+				bevinfo->proxy_bev = *iter;
+				bevinfo->tick = GetTickCount64();
+				bufferevent_setcb(*iter, le_proxy_readcb, NULL, le_eventcb, (void*)fd_index);
+				bufferevent_enable(*iter, EV_READ | EV_WRITE);
+				bevinfo->status = 1;
+				gBevWaitin.erase(iter);
+				break;
+			}
+		}
 	}
 	else if (flag == 2) {
-
-		int idlecountmap = countbevmapidle();
-
-		// check if there is available tunnel
-		if (idlecountmap == 0)
-			return;
-
-		printf("Available tunnels is %d.\n", idlecountmap);
 
 		proxy_bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE 
 #ifdef _WIN32
 			| BEV_OPT_THREADSAFE
 #endif
 		);
+
 		if (!proxy_bev)
 		{
 			printf("bufferevent_socket_new Error, %s (%d).\n", __func__, __LINE__);
 			return;
 		}
+
+		int idlecountmap = countbevmapidle();
+
+		printf("Client connection accepted, current available tunnel count is %d.\n", idlecountmap);
+
+		// check if there is available tunnel
+		if (idlecountmap == 0 && manage_bev != NULL) {
+			_PckCmd pMsg = { 0 };
+			pMsg.head = 0xC1;
+			pMsg.len = sizeof(pMsg);
+			pMsg.cmd = 0xA1;
+			pMsg.data = 1;
+			if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
+				printf("bufferevent_write Error, %s (%d).\n", __func__, __LINE__);
+				//return;
+			}
+			// there has no tunnel available atm., lets add this in the waiting list for now...
+			gBevWaitin.push_back(proxy_bev);
+			printf("The are %d client(s) in the waiting list right now.\n", gBevWaitin.size());
+
+			return;
+		}
+
 
 		// bridge proxy and tunnel
 		intptr_t idleindex = getidlemap();
@@ -409,7 +451,7 @@ le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
 	if ((events & BEV_EVENT_EOF) || (events & BEV_EVENT_ERROR))
 	{
-		printf("le_manage_eventcb manager disconnected.\n");
+		printf("Manager is disconnected.\n");
 		bufferevent_free(bev);
 		manage_bev = NULL;
 	}
@@ -499,7 +541,6 @@ static intptr_t getidlemap() {
 unsigned long long
 GetTickCount64()
 {
-	//using namespace std::chrono;
 	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 #endif
