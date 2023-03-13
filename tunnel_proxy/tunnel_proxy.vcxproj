@@ -89,6 +89,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
       <LibraryDependencies>event</LibraryDependencies>
+      <AdditionalOptions>-static %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile>
       <AdditionalOptions>-fpermissive %(AdditionalOptions)</AdditionalOptions>

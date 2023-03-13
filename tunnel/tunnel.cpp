@@ -1,5 +1,10 @@
 // tunnel.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
+#define TUNNEL_PROXY_VER_MAJOR 1
+#define TUNNEL_PROXY_VER_MINOR 1
+#define TUNNEL_PROXY_VER_REV 4
+#define TUNNEL_PROXY_VER_STG "-a.1"
+
 #ifdef _WIN32
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <winsock2.h>
@@ -120,8 +125,13 @@ int main(int argc, char* argv[])
 	base = event_base_new();
 #endif
 
-	printf("Using Libevent with backend method %s.\n",
+	printf("Tunnel %d.%d.%d.%s, socket backend is %s.\n",
+		TUNNEL_PROXY_VER_MAJOR,
+		TUNNEL_PROXY_VER_MINOR,
+		TUNNEL_PROXY_VER_REV,
+		TUNNEL_PROXY_VER_STG,
 		event_base_get_method(base));
+
 
 	timeout = event_new(base, -1, EV_PERSIST, le_timercb, NULL);
 	evutil_timerclear(&tv);
