@@ -35,5 +35,7 @@ Let say you have a Home Assistant server (Debian Linux OS) in your house and you
 
 ... then run tunnel_proxy in your online VPS (required ports opened)
 
+**tunnel_proxy 20 15 8020 8000 8123**
+
 Now you can access your Home Assistant server with browser or mobile app with address http://139.88.23.50:8123
 
