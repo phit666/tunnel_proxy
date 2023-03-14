@@ -1,6 +1,5 @@
 # Tunnel Proxy
-Tunnel proxy is meant to allow local services like Home Assistant, Remote Desktop etc.. to be available anywhere without having a public IP nor a need to change your local router configurations.
-It is coded with c++ and currently can be compiled with Windows and Linux, libevent 2.0.22 and newer is required.
+Access your home device's services (device web portals, remote dekstop, home assistant, WOL to turn on your computer etc..) anywhere without a need of public IP nor deal with router configs for port forwarding.
 
 # tunnel
 This is console program you will run locally in the same network as your local/internal server, this program will create a network tunnel between the local server and tunnel_proxy.
