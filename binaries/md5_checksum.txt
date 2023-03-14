@@ -1,8 +1,0 @@
-Win64 Binaries
-tunnel_proxy.exe			md5-checksum: 377374d1b0626290c50d36af349e9631
-tunnel.exe				md5-checksum: 31dbceb7fd3110d74d1cc5fbe38ebbc5
-
-Linux-x64 Binaries
-tunnel_proxy			md5-checksum: bbe1ac3c75d18ee8a89e2737e2a0290e
-tunnel				md5-checksum: ab9091aa1738659b34ab408d8e235075
-	
