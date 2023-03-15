@@ -13,7 +13,14 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tunnelwin", "tunnelwin\tunn
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tunnel_proxywin", "tunnel_proxywin\tunnel_proxywin.vcxproj", "{0F1A5A5D-9D74-46F6-9017-827398EC7EAD}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Common", "Common\Common.vcxitems", "{1675A876-571C-49CB-9858-DB70BC0866F0}"
+EndProject
 Global
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		Common\Common.vcxitems*{1675a876-571c-49cb-9858-db70bc0866f0}*SharedItemsImports = 9
+		Common\Common.vcxitems*{912aae7b-2277-4c5c-ba25-ce2092a3dd3d}*SharedItemsImports = 4
+		Common\Common.vcxitems*{f739d440-f4e6-43aa-8a98-ab357ce91cf5}*SharedItemsImports = 4
+	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
 		Debug|ARM64 = Debug|ARM64

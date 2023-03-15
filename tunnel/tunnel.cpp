@@ -26,40 +26,8 @@
 	A tunnel system for Tunnel Proxy.
  */
 
-#define TUNNEL_PROXY_VER_MAJOR 1
-#define TUNNEL_PROXY_VER_MINOR 1
-#define TUNNEL_PROXY_VER_REV 4
-#define TUNNEL_PROXY_VER_STG "-a.1"
+#include "common.h"
 
-#ifdef _WIN32
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include <winsock2.h>
-#pragma comment(lib,"Ws2_32.lib")
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#define DWORD unsigned int
-#define BYTE unsigned char
-#define WORD unsigned short int
-#endif
-#include <csignal>
-#include <iostream>
-#include <stdlib.h>
-#include <stdio.h>
-#include <sstream>
-#include <string.h>
-#include <event2/bufferevent.h>
-#include <event2/buffer.h>
-#include <event2/listener.h>
-#include <event2/util.h>
-#include <event2/event.h>
-#include <event2/thread.h>
-
-#include <chrono>
-#include <ctime>
-
-#include <map>
-#include <vector>
 
 struct _BEVINFO
 {
@@ -67,16 +35,7 @@ struct _BEVINFO
 	struct bufferevent* tunnel_bev;
 };
 
-struct _PckCmd
-{
-	BYTE head;
-	BYTE len;
-	BYTE cmd;
-	WORD data;
-};
-
 struct bufferevent* le_connect(DWORD ip, WORD port, int index);
-DWORD host2ip(const char* hostname);
 static void signal_handler(int signal);
 static void le_proxy_readcb(struct bufferevent*, void*);
 static void le_tunnel_readcb(struct bufferevent*, void*);
@@ -99,11 +58,6 @@ static char manageip[50] = { 0 };
 static _BEVINFO* getbevinfomap(intptr_t fd_index);
 static void delbevmap(intptr_t fd_index);
 static std::map <intptr_t, _BEVINFO*> gBevMap;
-
-#ifndef _WIN32
-unsigned long long
-GetTickCount64();
-#endif
 
 int main(int argc, char* argv[])
 {
@@ -151,7 +105,7 @@ int main(int argc, char* argv[])
 	base = event_base_new();
 #endif
 
-	printf("Tunnel %d.%d.%d.%s, socket backend is %s.\n",
+	msglog(eMSGTYPE::INFO, "Tunnel Proxy %d.%d.%d.%s, socket backend is %s.",
 		TUNNEL_PROXY_VER_MAJOR,
 		TUNNEL_PROXY_VER_MINOR,
 		TUNNEL_PROXY_VER_REV,
@@ -177,7 +131,7 @@ int main(int argc, char* argv[])
 			bufferevent_free(iter->second->tunnel_bev);
 		delete iter->second;
 
-		printf("Exit cleanup, deleted fd index %d.\n", (int)iter->first);
+		msglog(eMSGTYPE::DEBUG, "Exit cleanup, deleted map index %d.", (int)iter->first);
 
 	}
 
@@ -192,7 +146,8 @@ int main(int argc, char* argv[])
 	WSACleanup();
 #endif
 
-	printf("main->exit.\n");
+	msglog(eMSGTYPE::DEBUG, "Memory cleanup done.");
+
 	return 0;
 }
 
@@ -206,12 +161,10 @@ struct bufferevent* le_connect(DWORD ip, WORD port, int index)
 #ifdef _WIN32
 		| BEV_OPT_THREADSAFE
 #endif
-		//| BEV_OPT_DEFER_CALLBACKS
-		//| BEV_OPT_UNLOCK_CALLBACKS
 	);
 
 	if (!_bev) {
-		printf("bufferevent_socket_new Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_socket_new failed, %s (%d).", __func__, __LINE__);
 		return NULL;
 	}
 
@@ -222,7 +175,7 @@ struct bufferevent* le_connect(DWORD ip, WORD port, int index)
 	result = bufferevent_socket_connect(_bev, (struct sockaddr*)&remote_address, sizeof(remote_address));
 
 	if (result == -1) {
-		printf("bufferevent_socket_connect Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_socket_connect failed, %s (%d).", __func__, __LINE__);
 		return NULL;
 	}
 
@@ -244,7 +197,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 
 	if (lpMsg->cmd == 0xA1) {
 
-		printf("Manager requested for %d tunnels.\n", lpMsg->data);
+		msglog(eMSGTYPE::DEBUG, "proxy requested for %d tunnels.", lpMsg->data);
 
 		// lets spawn the requested idle tunnels
 		for (int i = 0; i < lpMsg->data; i++) {
@@ -252,7 +205,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 			struct bufferevent* _bev1 = le_connect(host2ip(proxyip), portProxy, 1);
 
 			if (_bev1 == NULL) {
-				printf("le_connect Error, %s (%d).\n", __func__, __LINE__);
+				msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 				return;
 			}
 
@@ -260,7 +213,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 			struct bufferevent* _bev2 = le_connect(host2ip(svrip), portServer, 2);
 
 			if (_bev2 == NULL) {
-				printf("le_connect Error, %s (%d).\n", __func__, __LINE__);
+				msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 				bufferevent_free(_bev1);
 				return;
 			}
@@ -278,6 +231,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 	}
 	else if (lpMsg->cmd == 0xA2) {
 		manager_tick = GetTickCount64();
+		msglog(eMSGTYPE::DEBUG, "received keep alive packet.");
 	}
 }
 
@@ -289,7 +243,7 @@ le_tunnel_readcb(struct bufferevent* _bev, void* user_data)
 	if (bevinfo == NULL)
 		return;
 	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->proxy_bev)) == -1) {
-		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
 		return;
 	}
 }
@@ -302,7 +256,7 @@ le_proxy_readcb(struct bufferevent* _bev, void* user_data)
 	if (bevinfo == NULL)
 		return;
 	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->tunnel_bev)) == -1) {
-		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer Error, %s (%d).", __func__, __LINE__);
 		return;
 	}
 }
@@ -312,17 +266,18 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 	if (manage_bev != NULL && GetTickCount64() - manager_tick >= 10000) {
 		bufferevent_free(manage_bev);
 		manage_bev = NULL;
-		printf("Manager connection deleted.\n");
+		msglog(eMSGTYPE::DEBUG, "proxy manager connection deleted, idled for 10 sec.");
 	}
 
 	if (manage_bev == NULL) {
 		manage_bev = le_connect(host2ip(manageip), portManage, 0);
 		if (!manage_bev) {
-			printf("le_connect Error, %s (%d).\n", __func__, __LINE__);
+			msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
 		manager_tick = GetTickCount64();
 		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
+		msglog(eMSGTYPE::DEBUG, "connected to proxy.");
 	}
 	else {
 		_PckCmd pMsg = { 0 };
@@ -330,7 +285,10 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		pMsg.len = sizeof(pMsg);
 		pMsg.cmd = 0xA2;
 		pMsg.data = 0;
-		bufferevent_write(manage_bev, (unsigned char *)&pMsg, pMsg.len);
+		if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
+			msglog(eMSGTYPE::ERROR, "bufferevent_write failed, %s (%d).", __func__, __LINE__);
+		}
+		msglog(eMSGTYPE::DEBUG, "sent keep alive packet.");
 	}
 }
 
@@ -365,7 +323,7 @@ le_eventcb(struct bufferevent* bev, short events, void* user_data)
 		delete bevinfo;
 		delbevmap(fd_index);
 
-		printf("Deleted fd index %d.\n", (int)fd_index);
+		msglog(eMSGTYPE::DEBUG, "Deleted tunnel index %d.", (int)fd_index);
 
 	}
 	else if (events & BEV_EVENT_CONNECTED)
@@ -391,22 +349,10 @@ static void delbevmap(intptr_t fd_index) {
 	}
 }
 
-DWORD host2ip(const char* hostname)
-{
-	struct hostent* h = gethostbyname(hostname);
-	return (h != NULL) ? ntohl(*(DWORD*)h->h_addr) : 0;
-}
-
 static void signal_handler(int signal)
 {
 	event_base_loopbreak(base);
 }
 
-#ifndef _WIN32
-unsigned long long
-GetTickCount64()
-{
-	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-#endif
+
 

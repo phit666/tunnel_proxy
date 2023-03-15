@@ -26,53 +26,11 @@
 	A client proxy system for Tunnel Proxy.
  */
 
-#define TUNNEL_PROXY_VER_MAJOR 1
-#define TUNNEL_PROXY_VER_MINOR 1
-#define TUNNEL_PROXY_VER_REV 4
-#define TUNNEL_PROXY_VER_STG "-a.1"
+#include "common.h"
 
-
-#ifdef _WIN32
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include <winsock2.h>
-#pragma comment(lib,"Ws2_32.lib")
-#else
-#define DWORD unsigned int
-#define BYTE unsigned char
-#define WORD unsigned short int
-#include <sys/socket.h>
-#include <netinet/in.h>
-#endif
-#include <csignal>
-#include <iostream>
-#include <stdlib.h>
-#include <stdio.h>
-#include <sstream>
-#include <string.h>
-#include <iostream>
-#include <event2/bufferevent.h>
-#include <event2/buffer.h>
-#include <event2/listener.h>
-#include <event2/util.h>
-#include <event2/event.h>
-#include <event2/thread.h>
-
-#include <chrono>
-#include <ctime>
-
-#include <map>
-#include <vector>
 
 static int IDLE_TUNNELS = 100;
 static int IDLE_TUNNELS_MIN = 90;
-
-struct _PckCmd
-{
-	BYTE head;
-	BYTE len;
-	BYTE cmd;
-	WORD data;
-};
 
 struct _BEVINFO
 {
@@ -104,11 +62,7 @@ static void delbevmap(intptr_t fd_index);
 static int countbevmapidle();
 static intptr_t getidlemap();
 static void flagusebevmap(intptr_t fd_index);
-
-#ifndef _WIN32
-unsigned long long
-GetTickCount64();
-#endif
+static int reqmanager(struct bufferevent* bev, eREQTYPE reqtype, int data);
 
 static struct bufferevent* manage_bev = NULL;
 static unsigned long long manager_tick = 0;
@@ -165,7 +119,7 @@ int main(int argc, char* argv[])
 	base = event_base_new();
 #endif
 
-	printf("Tunnel Proxy %d.%d.%d.%s, socket backend is %s.\n", 
+	msglog(eMSGTYPE::INFO, "Tunnel Proxy %d.%d.%d.%s, socket backend is %s.",
 		TUNNEL_PROXY_VER_MAJOR,
 		TUNNEL_PROXY_VER_MINOR,
 		TUNNEL_PROXY_VER_REV,
@@ -182,11 +136,12 @@ int main(int argc, char* argv[])
 		sizeof(sin));
 
 	if (!manage_listener) {
-		printf("main->evconnlistener_new_bind failed, port %d.\n", manage_port);
+		msglog(eMSGTYPE::ERROR, "evconnlistener_new_bind failed at port %d, %s (%d).", manage_port, __func__, __LINE__);
+		event_base_free(base);
 		return -1;
 	}
 
-	printf("main->evconnlistener_new_bind OK, manage port %d.\n", manage_port);
+	msglog(eMSGTYPE::INFO, "Tunnel Proxy is listening to manage port %d.", manage_port);
 
 
 	memset(&sin, 0, sizeof(sin));
@@ -199,11 +154,13 @@ int main(int argc, char* argv[])
 		sizeof(sin));
 
 	if (!tunnel_listener) {
-		printf("main->evconnlistener_new_bind failed, port %d.\n", tunnel_port);
+		msglog(eMSGTYPE::ERROR, "evconnlistener_new_bind failed at port %d, %s (%d).", tunnel_port, __func__, __LINE__);
+		evconnlistener_free(manage_listener);
+		event_base_free(base);
 		return -1;
 	}
 
-	printf("main->evconnlistener_new_bind OK, tunnel port %d.\n", tunnel_port);
+	msglog(eMSGTYPE::INFO, "Tunnel Proxy is listening to tunnel port %d.", tunnel_port);
 
 
 	memset(&sin, 0, sizeof(sin));
@@ -216,11 +173,14 @@ int main(int argc, char* argv[])
 		sizeof(sin));
 
 	if (!proxy_listener) {
-		printf("main->evconnlistener_new_bind failed, port %d.\n", proxy_port);
+		msglog(eMSGTYPE::ERROR, "evconnlistener_new_bind failed at port %d, %s (%d).", proxy_port, __func__, __LINE__);
+		evconnlistener_free(manage_listener);
+		evconnlistener_free(tunnel_listener);
+		event_base_free(base);
 		return -1;
 	}
 
-	printf("main->evconnlistener_new_bind OK, proxy port %d.\n", proxy_port);
+	msglog(eMSGTYPE::INFO, "Tunnel Proxy is listening to proxy port %d.", proxy_port);
 
 	timeout = event_new(base, -1, EV_PERSIST, le_timercb, NULL);
 	evutil_timerclear(&tv);
@@ -243,7 +203,7 @@ int main(int argc, char* argv[])
 		if (iter->second->tunnel_bev != NULL)
 			bufferevent_free(iter->second->tunnel_bev);
 		delete iter->second;
-		printf("Exit cleanup, deleted fd index %d.\n", (int)iter->first);
+		msglog(eMSGTYPE::DEBUG, "Exit cleanup, deleted map index %d.", (int)iter->first);
 	}
 
 	gBevMap.clear();
@@ -266,7 +226,7 @@ int main(int argc, char* argv[])
 	WSACleanup();
 #endif
 
-	printf("main->exit.\n");
+	msglog(eMSGTYPE::DEBUG, "Memory cleanup done.");
 
 	return 0;
 }
@@ -277,7 +237,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		if ((GetTickCount64() - manager_tick) >= 10000) {
 			bufferevent_free(manage_bev);
 			manage_bev = NULL;
-			printf("Manager connection deleted.\n");
+			msglog(eMSGTYPE::DEBUG, "proxy manager connection deleted, idled for 10 sec.");
 		}
 	}
 
@@ -290,7 +250,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 				if (iter->second->tunnel_bev != NULL)
 					bufferevent_free(iter->second->tunnel_bev);
 				delete iter->second;
-				printf("Idle connection (active) deleted, fd index %d.\n", (int)iter->first);
+				msglog(eMSGTYPE::DEBUG, "Idle connection (active) deleted, map index %d.", (int)iter->first);
 				gBevMap.erase(iter);
 			}
 		}
@@ -301,7 +261,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 				if (iter->second->tunnel_bev != NULL)
 					bufferevent_free(iter->second->tunnel_bev);
 				delete iter->second;
-				printf("Idle connection (waiting) deleted, fd index %d.\n", (int)iter->first);
+				msglog(eMSGTYPE::DEBUG, "Idle connection (waiting) deleted, map index %d.", (int)iter->first);
 				gBevMap.erase(iter);
 			}
 		}
@@ -310,29 +270,19 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 	if (manage_bev != NULL) {
 		int idlecounts = countbevmapidle();
 		if (idlecounts < IDLE_TUNNELS_MIN) {
-			_PckCmd pMsg = { 0 };
-			pMsg.head = 0xC1;
-			pMsg.len = sizeof(pMsg);
-			pMsg.cmd = 0xA1;
-			pMsg.data = IDLE_TUNNELS - IDLE_TUNNELS_MIN;
-			if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
-				printf("bufferevent_write Error, %s (%d).\n", __func__, __LINE__);
-				return;
+			if (reqmanager(manage_bev, eREQTYPE::CREATE_TUNNEL, IDLE_TUNNELS - IDLE_TUNNELS_MIN) == 0) {
+				msglog(eMSGTYPE::DEBUG, "Proxy manager requested for %d tunnels.", IDLE_TUNNELS - IDLE_TUNNELS_MIN);
 			}
-			printf("Manager requested for %d tunnels.\n", pMsg.data);
 		}
 	}
-
 }
 
 static void
 le_manage_readcb(struct bufferevent* _bev, void* user_data)
 {
-	//char buffer[255] = { 0 };
 	manager_tick = GetTickCount64();
-	//int len = bufferevent_read(_bev, buffer, 255);
 	if (bufferevent_read_buffer(_bev, bufferevent_get_output(_bev)) == -1) {
-		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
 	}
 }
 
@@ -344,11 +294,8 @@ le_tunnel_readcb(struct bufferevent* _bev, void* user_data)
 	if (bevinfo == NULL || bevinfo->status == 0)
 		return;
 	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->proxy_bev)) == -1) {
-		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
 	}
-
-	//auto timenow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	//printf("[%s] Tunnel to Proxy at Index %d\n", ctime(&timenow), fd_index);
 }
 
 static void
@@ -362,11 +309,8 @@ le_proxy_readcb(struct bufferevent* _bev, void* user_data)
 	bevinfo->tick = GetTickCount64();
 
 	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->tunnel_bev)) == -1) {
-		printf("bufferevent_read_buffer Error, %s (%d).\n", __func__, __LINE__);
+		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
 	}
-
-	//auto timenow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	//printf("[%s] Proxy to Tunnel at Index %d\n", ctime(&timenow), fd_index);
 }
 
 static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
@@ -380,14 +324,14 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 #ifdef _WIN32
 			| BEV_OPT_THREADSAFE
 #endif
-		/* | BEV_OPT_DEFER_CALLBACKS | BEV_OPT_UNLOCK_CALLBACKS*/);
+		);
 		if (!manage_bev)
 		{
-			printf("bufferevent_socket_new Error, %s (%d).\n", __func__, __LINE__);
+			msglog(eMSGTYPE::ERROR, "bufferevent_socket_new failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
 
-		printf("Manager is connected.\n");
+		msglog(eMSGTYPE::DEBUG, "Proxy manager is connected.");
 
 		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
 		bufferevent_enable(manage_bev, EV_WRITE);
@@ -402,7 +346,7 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 		/* | BEV_OPT_DEFER_CALLBACKS | BEV_OPT_UNLOCK_CALLBACKS*/);
 		if (!tunnel_bev)
 		{
-			printf("bufferevent_socket_new Error, %s (%d).\n", __func__, __LINE__);
+			msglog(eMSGTYPE::ERROR, "bufferevent_socket_new failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
 
@@ -442,30 +386,28 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 
 		if (!proxy_bev)
 		{
-			printf("bufferevent_socket_new Error, %s (%d).\n", __func__, __LINE__);
+			msglog(eMSGTYPE::ERROR, "bufferevent_socket_new failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
 
 		int idlecountmap = countbevmapidle();
 
-		printf("Client connection accepted, current available tunnel count is %d.\n", idlecountmap);
+		msglog(eMSGTYPE::DEBUG, "Client connection accepted, current available tunnel count is %d.", idlecountmap);
 
 		// check if there is available tunnel
-		if (idlecountmap == 0 && manage_bev != NULL) {
-			_PckCmd pMsg = { 0 };
-			pMsg.head = 0xC1;
-			pMsg.len = sizeof(pMsg);
-			pMsg.cmd = 0xA1;
-			pMsg.data = 1;
-			if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
-				printf("bufferevent_write Error, %s (%d).\n", __func__, __LINE__);
-				//return;
+		if (idlecountmap == 0) {
+			if (manage_bev == NULL) {
+				msglog(eMSGTYPE::DEBUG, "Proxy manager is not connected, failed to request for new tunnel.");
 			}
-			// there has no tunnel available atm., lets add this in the waiting list for now...
-			gBevWaitin.push_back(proxy_bev);
-			printf("The are %d client(s) in the waiting list right now.\n", gBevWaitin.size());
-
-			return;
+			else {
+				if (reqmanager(manage_bev, eREQTYPE::CREATE_TUNNEL, 1) == 0) {
+					msglog(eMSGTYPE::DEBUG, "Proxy manager requested for %d tunnels.", 1);
+				}
+				// there has no tunnel available atm., lets add this in the waiting list for now...
+				gBevWaitin.push_back(proxy_bev);
+				msglog(eMSGTYPE::DEBUG, "There are %d client(s) in the waiting list right now.", gBevWaitin.size());
+				return;
+			}
 		}
 
 
@@ -486,9 +428,15 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 static void
 le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
-	if ((events & BEV_EVENT_EOF) || (events & BEV_EVENT_ERROR))
+	if (events & BEV_EVENT_EOF)
 	{
-		printf("Manager is disconnected.\n");
+		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_EOF.");
+		bufferevent_free(bev);
+		manage_bev = NULL;
+	}
+	else if (events & BEV_EVENT_ERROR)
+	{
+		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_ERROR.");
 		bufferevent_free(bev);
 		manage_bev = NULL;
 	}
@@ -521,11 +469,25 @@ le_eventcb(struct bufferevent* bev, short events, void* user_data)
 
 		int idlecountmap = countbevmapidle();
 
-		printf("Deleted fd index %d, idle count now is %d.\n", (int)fd_index, idlecountmap);
+		msglog(eMSGTYPE::DEBUG, "Deleted map index %d, idle count now is %d.", (int)fd_index, idlecountmap);
 	}
 	else if (events & BEV_EVENT_CONNECTED)
 	{
 	}
+}
+
+
+static int reqmanager(struct bufferevent* bev, eREQTYPE reqtype, int data) {
+	_PckCmd pMsg = { 0 };
+	pMsg.head = 0xC1;
+	pMsg.len = sizeof(pMsg);
+	pMsg.cmd = reqtype;
+	pMsg.data = data;
+	if (bufferevent_write(bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
+		msglog(eMSGTYPE::ERROR, "bufferevent_write failed, %s (%d).", __func__, __LINE__);
+		return -1;
+	}
+	return 0;
 }
 
 static _BEVINFO* getbevinfomap(intptr_t fd_index) {
@@ -573,14 +535,6 @@ static intptr_t getidlemap() {
 	}
 	return -1;
 }
-
-#ifndef _WIN32
-unsigned long long
-GetTickCount64()
-{
-	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-#endif
 
 static void signal_handler(int signal)
 {
