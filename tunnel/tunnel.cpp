@@ -195,7 +195,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 
 	_PckCmd* lpMsg = (_PckCmd*)buffer;
 
-	if (lpMsg->cmd == 0xA1) {
+	if (lpMsg->cmd == eREQTYPE::CREATE_TUNNEL) {
 
 		msglog(eMSGTYPE::DEBUG, "proxy requested for %d tunnels.", lpMsg->data);
 
@@ -208,7 +208,6 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 				msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 				return;
 			}
-
 
 			struct bufferevent* _bev2 = le_connect(host2ip(svrip), portServer, 2);
 
@@ -229,9 +228,9 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 			bufferevent_setcb(_bev2, le_tunnel_readcb, NULL, le_eventcb, (void*)fd_index);
 		}
 	}
-	else if (lpMsg->cmd == 0xA2) {
+	else if (lpMsg->cmd == eREQTYPE::KEEP_ALIVE && lpMsg->data == 2) {
 		manager_tick = GetTickCount64();
-		msglog(eMSGTYPE::DEBUG, "received keep alive packet.");
+		msglog(eMSGTYPE::DEBUG, "Tunnel received keep alive packet.");
 	}
 }
 
@@ -284,11 +283,11 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		pMsg.head = 0xC1;
 		pMsg.len = sizeof(pMsg);
 		pMsg.cmd = 0xA2;
-		pMsg.data = 0;
+		pMsg.data = 1;
 		if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
 			msglog(eMSGTYPE::ERROR, "bufferevent_write failed, %s (%d).", __func__, __LINE__);
 		}
-		msglog(eMSGTYPE::DEBUG, "sent keep alive packet.");
+		msglog(eMSGTYPE::DEBUG, "Tunnel sent keep alive packet.");
 	}
 }
 
@@ -297,7 +296,7 @@ le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
 	if (events & BEV_EVENT_EOF || events & BEV_EVENT_ERROR)
 	{
-		bufferevent_free(bev);
+		bufferevent_free(manage_bev);
 		manage_bev = NULL;
 	}
 	else if (events & BEV_EVENT_CONNECTED)

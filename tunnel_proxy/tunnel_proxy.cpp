@@ -268,11 +268,16 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 	}
 
 	if (manage_bev != NULL) {
+
 		int idlecounts = countbevmapidle();
 		if (idlecounts < IDLE_TUNNELS_MIN) {
 			if (reqmanager(manage_bev, eREQTYPE::CREATE_TUNNEL, IDLE_TUNNELS - IDLE_TUNNELS_MIN) == 0) {
 				msglog(eMSGTYPE::DEBUG, "Proxy manager requested for %d tunnels.", IDLE_TUNNELS - IDLE_TUNNELS_MIN);
 			}
+		}
+
+		if (reqmanager(manage_bev, eREQTYPE::KEEP_ALIVE, 2) == 0) {
+			msglog(eMSGTYPE::DEBUG, "Proxy manager sent keep alive packet.");
 		}
 	}
 }
@@ -280,9 +285,20 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 static void
 le_manage_readcb(struct bufferevent* _bev, void* user_data)
 {
-	manager_tick = GetTickCount64();
-	if (bufferevent_read_buffer(_bev, bufferevent_get_output(_bev)) == -1) {
-		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
+	if (manage_bev == NULL)
+		return;
+
+	char buffer[8192] = { 0 };
+	int len = bufferevent_read(_bev, (char*)buffer, 8192);
+
+	if (len < 2)
+		return;
+
+	_PckCmd* lpMsg = (_PckCmd*)buffer;
+
+	if (lpMsg->cmd == eREQTYPE::KEEP_ALIVE && lpMsg->data == 1) { // KEEP ALIVE
+		manager_tick = GetTickCount64();
+		msglog(eMSGTYPE::DEBUG, "Proxy manager received keep alive packet.");
 	}
 }
 
@@ -431,13 +447,13 @@ le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 	if (events & BEV_EVENT_EOF)
 	{
 		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_EOF.");
-		bufferevent_free(bev);
+		bufferevent_free(manage_bev);
 		manage_bev = NULL;
 	}
 	else if (events & BEV_EVENT_ERROR)
 	{
 		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_ERROR.");
-		bufferevent_free(bev);
+		bufferevent_free(manage_bev);
 		manage_bev = NULL;
 	}
 	else if (events & BEV_EVENT_CONNECTED)
