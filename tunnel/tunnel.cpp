@@ -270,13 +270,11 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 
 	if (manage_bev == NULL) {
 		manage_bev = le_connect(host2ip(manageip), portManage, 0);
-		if (!manage_bev) {
+		if (manage_bev == NULL) {
 			msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
-		manager_tick = GetTickCount64();
 		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
-		msglog(eMSGTYPE::DEBUG, "connected to proxy.");
 	}
 	else {
 		_PckCmd pMsg = { 0 };
@@ -294,13 +292,22 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 static void
 le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
-	if (events & BEV_EVENT_EOF || events & BEV_EVENT_ERROR)
+	if (events & BEV_EVENT_EOF)
 	{
 		bufferevent_free(manage_bev);
 		manage_bev = NULL;
+		msglog(eMSGTYPE::DEBUG, "disconnected from proxy manager (EOF).");
+	}
+	else if (events & BEV_EVENT_ERROR)
+	{
+		bufferevent_free(manage_bev);
+		manage_bev = NULL;
+		msglog(eMSGTYPE::DEBUG, "disconnected from proxy manager (ERROR).");
 	}
 	else if (events & BEV_EVENT_CONNECTED)
 	{
+		manager_tick = GetTickCount64();
+		msglog(eMSGTYPE::DEBUG, "connected to proxy manager.");
 	}
 }
 

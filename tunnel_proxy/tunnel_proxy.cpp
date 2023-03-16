@@ -447,13 +447,15 @@ le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 	if (events & BEV_EVENT_EOF)
 	{
 		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_EOF.");
-		bufferevent_free(manage_bev);
+		if(manage_bev != NULL)
+			bufferevent_free(manage_bev);
 		manage_bev = NULL;
 	}
 	else if (events & BEV_EVENT_ERROR)
 	{
 		msglog(eMSGTYPE::DEBUG, "Proxy manager is disconnected, event code is BEV_EVENT_ERROR.");
-		bufferevent_free(manage_bev);
+		if (manage_bev != NULL)
+			bufferevent_free(manage_bev);
 		manage_bev = NULL;
 	}
 	else if (events & BEV_EVENT_CONNECTED)
