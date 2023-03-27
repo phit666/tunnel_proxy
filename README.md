@@ -1,5 +1,8 @@
 # Tunnel Proxy
-Access your home device's services (device web portals, remote dekstop, home assistant, WOL to turn on your computer etc..) anywhere without a need of public IP nor deal with router configs for port forwarding.
+This will let your local services be online without opening a port in your main host's firewall, it simply means you can access a service like your home's remote desktop anywhere even if your internet is not public and it can also secure a server by not exposing it's IP address as you can let a dummy host handle the request.
+
+LOCAL Service 
+
 
 # tunnel
 This is console program you will run locally in the same network as your local/internal server, this program will create a network tunnel between the local server and tunnel_proxy.
@@ -28,13 +31,28 @@ All ports of tunnel_proxy should be opened in the firewall.
 - proxy port: The port where the users will connect.
 
 # Example
-Let say you have a Home Assistant server (Debian Linux OS) in your house and you don't have a public IP but you have cheap VPS running in Linux online with public IP 139.88.23.50, now to make your Home Assistant server be accessible in the internet you can run tunnel in the Home Assistant server with the default parameters...
+**How to make a local device service be accessible online**
 
-**tunnel 139.88.23.50 8020 8000 127.0.0.1 8123**
+Let say you have a Home Assistant server (Debian Linux OS) in your house and you don't have a public IP but you have cheap VPS running in Linux online with public IP 139.88.23.50, now to make your Home Assistant server be accessible online, you can run tunnel in the Home Assistant server with the default parameters...
 
-... then run tunnel_proxy in your online VPS (required ports opened)
+- tunnel 139.88.23.50 8020 8000 127.0.0.1 8123
 
-**tunnel_proxy 20 15 8020 8000 8123**
+then run tunnel_proxy in your online VPS (inbound ports 8020,8000 and 8123 should be allowed in VPS firewall)
+
+- tunnel_proxy 20 15 8020 8000 8123
 
 Now you can access your Home Assistant server with browser or mobile app with address http://139.88.23.50:8123
 
+**How to secure a server**
+
+Let say you have an online main server with IP 139.88.23.50 and linux VPS with IP 139.88.1.20, now you can secure your main server by not opening the RDP port and not exposing it's IP.
+
+Run tunnel in your main server with parameters...
+
+- tunnel 139.88.1.20 4000 4001 127.0.0.1 3389
+
+Run tunnel_proxy in VPS with parameters...
+
+- tunnel_proxy 1 0 4000 4001 3389
+
+Now you can connect to your main server's remote desktop with IP 139.88.1.20 and port 3389
