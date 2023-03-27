@@ -241,8 +241,8 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		}
 	}
 
-	std::map <intptr_t, _BEVINFO*>::iterator iter;
-	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
+	std::map <intptr_t, _BEVINFO*>::iterator iter = gBevMap.begin();
+	while (iter != gBevMap.end()) {
 		if (iter->second->status == 1) {
 			if ((GetTickCount64() - iter->second->tick) >= 180000) {
 				if (iter->second->proxy_bev != NULL)
@@ -251,7 +251,8 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 					bufferevent_free(iter->second->tunnel_bev);
 				delete iter->second;
 				msglog(eMSGTYPE::DEBUG, "Idle connection (active) deleted, map index %d.", (int)iter->first);
-				gBevMap.erase(iter);
+				iter = gBevMap.erase(iter);
+				continue;
 			}
 		}
 		else if (iter->second->status == 0) {
@@ -262,9 +263,11 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 					bufferevent_free(iter->second->tunnel_bev);
 				delete iter->second;
 				msglog(eMSGTYPE::DEBUG, "Idle connection (waiting) deleted, map index %d.", (int)iter->first);
-				gBevMap.erase(iter);
+				iter = gBevMap.erase(iter);
+				continue;
 			}
 		}
+		iter++;
 	}
 
 	if (manage_bev != NULL) {
@@ -406,9 +409,11 @@ static void le_listener_cb(struct evconnlistener* listener, evutil_socket_t fd,
 			return;
 		}
 
+		msglog(eMSGTYPE::DEBUG, "Client connection accepted...");
+
 		int idlecountmap = countbevmapidle();
 
-		msglog(eMSGTYPE::DEBUG, "Client connection accepted, current available tunnel count is %d.", idlecountmap);
+		msglog(eMSGTYPE::DEBUG, "Current available tunnel count is %d.", idlecountmap);
 
 		// check if there is available tunnel
 		if (idlecountmap == 0) {

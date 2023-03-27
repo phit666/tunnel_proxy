@@ -95,6 +95,7 @@
     </ClCompile>
     <Link>
       <LibraryDependencies>event</LibraryDependencies>
+      <AdditionalOptions>-static %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
