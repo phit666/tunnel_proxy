@@ -1,9 +1,6 @@
 # Tunnel Proxy
 This will let your local services be online without opening a port in your main host's firewall, it simply means you can access a service like your home's remote desktop anywhere even if your internet is not public and it can also secure a server by not exposing it's IP address as you can let a dummy host handle the request.
 
-LOCAL Service 
-
-
 # tunnel
 This is console program you will run locally in the same network as your local/internal server, this program will create a network tunnel between the local server and tunnel_proxy.
 
