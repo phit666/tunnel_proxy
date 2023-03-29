@@ -146,19 +146,26 @@ int main()
 
 	try {
 
-		YAML::Node liclist = YAML::LoadFile("tunnelproxies.yaml");
-		YAML::iterator iter = liclist.begin();
-		while (iter != liclist.end()) {
-			const YAML::Node& licinfo = *iter;
+		YAML::Node configs = YAML::LoadFile("tunnel_proxy.yaml");
+
+		if (configs["Debug Message"].as<bool>() == true) {
+			LOGTYPEENABLED |= eMSGTYPE::DEBUG;
+		}
+
+		YAML::Node proxylist = configs["Proxy Servers"];
+
+		YAML::iterator iter = proxylist.begin();
+		while (iter != proxylist.end()) {
+			const YAML::Node& proxyinfo = *iter;
 
 			_TunnelProxiesInfo* tunnelproxyinfo = new _TunnelProxiesInfo;
 
-			memcpy(tunnelproxyinfo->name, licinfo["Proxy Name"].as<std::string>().c_str(), sizeof(tunnelproxyinfo->name));
-			tunnelproxyinfo->max_tunnels = licinfo["Max Tunnels"].as<int>();
-			tunnelproxyinfo->min_tunnels = licinfo["Min Tunnels"].as<int>();
-			tunnelproxyinfo->manage_port = licinfo["Manage Port"].as<int>();
-			tunnelproxyinfo->tunnel_port = licinfo["Tunnel Port"].as<int>();
-			tunnelproxyinfo->proxy_port = licinfo["Proxy Port"].as<int>();
+			memcpy(tunnelproxyinfo->name, proxyinfo["Proxy Name"].as<std::string>().c_str(), sizeof(tunnelproxyinfo->name));
+			tunnelproxyinfo->max_tunnels = proxyinfo["Max Tunnels"].as<int>();
+			tunnelproxyinfo->min_tunnels = proxyinfo["Min Tunnels"].as<int>();
+			tunnelproxyinfo->manage_port = proxyinfo["Manage Port"].as<int>();
+			tunnelproxyinfo->tunnel_port = proxyinfo["Tunnel Port"].as<int>();
+			tunnelproxyinfo->proxy_port = proxyinfo["Proxy Port"].as<int>();
 
 			memset(&sin, 0, sizeof(sin));
 			sin.sin_family = AF_INET;
