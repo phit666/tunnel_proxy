@@ -56,8 +56,8 @@
 
 #define TUNNEL_PROXY_VER_MAJOR 1
 #define TUNNEL_PROXY_VER_MINOR 2
-#define TUNNEL_PROXY_VER_REV 3
-#define TUNNEL_PROXY_VER_STG "-rc.1"
+#define TUNNEL_PROXY_VER_REV 4
+#define TUNNEL_PROXY_VER_STG "-rc.2"
 
 #ifndef _WIN32
 #define DWORD unsigned int
@@ -93,7 +93,7 @@ struct _PckCmd
 };
 
 
-#define LOGTYPEENABLED  ((DWORD)eMSGTYPE::INFO | (DWORD)eMSGTYPE::ERROR/* | (DWORD)eMSGTYPE::DEBUG*/)
+#define LOGTYPEENABLED  ((DWORD)eMSGTYPE::INFO | (DWORD)eMSGTYPE::ERROR | (DWORD)eMSGTYPE::DEBUG)
 
 void msglog(BYTE type, const char* msg, ...);
 DWORD host2ip(const char* hostname);
