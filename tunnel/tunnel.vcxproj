@@ -94,7 +94,7 @@
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions);EVENT_EPOLL_USE_CHANGELIST</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <LibraryDependencies>event</LibraryDependencies>
+      <LibraryDependencies>event;yaml-cpp</LibraryDependencies>
       <AdditionalOptions>-static %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>

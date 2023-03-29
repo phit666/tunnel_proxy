@@ -9,10 +9,10 @@
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -23,11 +23,11 @@
  */
 
  /** @file tunnel.cpp
-	A tunnel system for Tunnel Proxy.
+	A tunnel system capable of multiple tunnels with yaml config for Tunnel Proxy.
  */
 
 #include "common.h"
-
+#include <yaml-cpp/yaml.h>
 
 struct _BEVINFO
 {
@@ -45,44 +45,42 @@ static void le_manage_eventcb(struct bufferevent*, short, void*);
 static void le_timercb(evutil_socket_t, short, void*);
 
 struct event_base* base;
-static struct bufferevent* manage_bev = NULL;
-static unsigned long long manager_tick = 0;
-
-static int portProxy;
-static int portServer;
-static int portManage;
-static char proxyip[50] = { 0 };
-static char svrip[50] = { 0 };
-static char manageip[50] = { 0 };
 
 static _BEVINFO* getbevinfomap(intptr_t fd_index);
 static void delbevmap(intptr_t fd_index);
 static std::map <intptr_t, _BEVINFO*> gBevMap;
 
-int main(int argc, char* argv[])
+struct _TunnelsInfo
 {
-	struct evconnlistener* listener;
-	struct sockaddr_in sin;
-	struct event* timeout;
-	struct timeval tv;
-
-	if (argc < 5) {
-		std::cout << std::endl;
-		std::cout << "Usage:" << std::endl;
-		std::cout << "tunnel <manage ip> <manage port> <tunnel port>  <server-local-ip> <server-local-port>" << std::endl;
-		std::cout << std::endl;
-		return -1;
+	_TunnelsInfo()
+	{
+		timeout = NULL;
+		memset(manageip, 0, sizeof(manageip));
+		manageport = -1;
+		tunnelport = -1;
+		memset(local_serverip, 0, sizeof(local_serverip));
+		local_serverport = -1;
+		manage_bev = NULL;
+		manager_tick = 0;
 	}
 
-	std::signal(SIGINT, signal_handler);
+	struct event* timeout;
+	char manageip[16];
+	int manageport;
+	int tunnelport;
+	char local_serverip[16];
+	int local_serverport;
+	struct bufferevent* manage_bev;
+	unsigned long long manager_tick;
+};
 
-	std::stringstream s;
-	s << argv[2]; s >> portManage; s.clear();
-	s << argv[3]; s >> portProxy; s.clear();
-	s << argv[5]; s >> portServer;
-	memcpy(&manageip, argv[1], sizeof(manageip));
-	memcpy(&proxyip, argv[1], sizeof(proxyip));
-	memcpy(&svrip, argv[4], sizeof(svrip));
+static std::vector< _TunnelsInfo*> vTunnels;
+
+int main()
+{
+	struct timeval tv;
+
+	std::signal(SIGINT, signal_handler);
 
 	gBevMap.clear();
 
@@ -113,15 +111,54 @@ int main(int argc, char* argv[])
 		event_base_get_method(base));
 
 
-	timeout = event_new(base, -1, EV_PERSIST, le_timercb, NULL);
-	evutil_timerclear(&tv);
-	tv.tv_sec = 2;
-	event_add(timeout, &tv);
+	try {
+
+		YAML::Node liclist = YAML::LoadFile("tunnels.yaml");
+		YAML::iterator iter = liclist.begin();
+		while (iter != liclist.end()) {
+			const YAML::Node& licinfo = *iter;
+			_TunnelsInfo* tunnelinfo = new _TunnelsInfo;
+			tunnelinfo->manageport = licinfo["Manage Port"].as<int>();
+			memcpy(tunnelinfo->manageip, licinfo["Manage IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
+			tunnelinfo->tunnelport = licinfo["Tunnel Port"].as<int>();
+			tunnelinfo->local_serverport = licinfo["Local Server Port"].as<int>();
+			memcpy(tunnelinfo->local_serverip, licinfo["Local Server IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
+
+			tunnelinfo->timeout = event_new(base, -1, EV_PERSIST, le_timercb, (void*)tunnelinfo);
+			evutil_timerclear(&tv);
+			tv.tv_sec = 2;
+			event_add(tunnelinfo->timeout, &tv);
+
+			vTunnels.push_back(tunnelinfo);
+			iter++;
+		}
+	}
+	catch (const YAML::BadFile& e) {
+		msglog(eMSGTYPE::ERROR, "YAML error, %s.", e.msg.c_str());
+		return -1;
+	}
+	catch (const YAML::ParserException& e) {
+		msglog(eMSGTYPE::ERROR, "YAML error, %s.", e.msg.c_str());
+		return -1;
+	}
 
 	event_base_dispatch(base);
 
-	event_del(timeout);
-	event_free(timeout);
+	std::vector<_TunnelsInfo*>::iterator viter = vTunnels.begin();
+	while (viter != vTunnels.end()) {
+		_TunnelsInfo* _tunneninfo = *viter;
+		event_del(_tunneninfo->timeout);
+		event_free(_tunneninfo->timeout);
+
+		if (_tunneninfo->manage_bev != NULL)
+			bufferevent_free(_tunneninfo->manage_bev);
+
+		delete _tunneninfo;
+		viter++;
+	}
+
+	vTunnels.clear();
+
 
 	std::map <intptr_t, _BEVINFO*>::iterator iter;
 	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
@@ -129,6 +166,7 @@ int main(int argc, char* argv[])
 			bufferevent_free(iter->second->proxy_bev);
 		if (iter->second->tunnel_bev != NULL)
 			bufferevent_free(iter->second->tunnel_bev);
+
 		delete iter->second;
 
 		msglog(eMSGTYPE::DEBUG, "Exit cleanup, deleted map index %d.", (int)iter->first);
@@ -137,8 +175,6 @@ int main(int argc, char* argv[])
 
 	gBevMap.clear();
 
-	if(manage_bev != NULL)
-		bufferevent_free(manage_bev);
 
 	event_base_free(base);
 
@@ -187,6 +223,8 @@ struct bufferevent* le_connect(DWORD ip, WORD port, int index)
 static void
 le_manage_readcb(struct bufferevent* _bev, void* user_data)
 {
+	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)user_data;
+
 	char buffer[8192] = { 0 };
 	int len = bufferevent_read(_bev, (char*)buffer, 8192);
 
@@ -202,14 +240,14 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 		// lets spawn the requested idle tunnels
 		for (int i = 0; i < lpMsg->data; i++) {
 
-			struct bufferevent* _bev1 = le_connect(host2ip(proxyip), portProxy, 1);
+			struct bufferevent* _bev1 = le_connect(host2ip(tunnelinfo->manageip), tunnelinfo->tunnelport, 1);
 
 			if (_bev1 == NULL) {
 				msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 				return;
 			}
 
-			struct bufferevent* _bev2 = le_connect(host2ip(svrip), portServer, 2);
+			struct bufferevent* _bev2 = le_connect(host2ip(tunnelinfo->local_serverip), tunnelinfo->local_serverport, 2);
 
 			if (_bev2 == NULL) {
 				msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
@@ -229,7 +267,7 @@ le_manage_readcb(struct bufferevent* _bev, void* user_data)
 		}
 	}
 	else if (lpMsg->cmd == eREQTYPE::KEEP_ALIVE && lpMsg->data == 2) {
-		manager_tick = GetTickCount64();
+		tunnelinfo->manager_tick = GetTickCount64();
 		msglog(eMSGTYPE::DEBUG, "Tunnel received keep alive packet.");
 	}
 }
@@ -262,19 +300,21 @@ le_proxy_readcb(struct bufferevent* _bev, void* user_data)
 
 static void le_timercb(evutil_socket_t fd, short event, void* arg)
 {
-	if (manage_bev != NULL && GetTickCount64() - manager_tick >= 10000) {
-		bufferevent_free(manage_bev);
-		manage_bev = NULL;
+	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)arg;
+
+	if (tunnelinfo->manage_bev != NULL && GetTickCount64() - tunnelinfo->manager_tick >= 10000) {
+		bufferevent_free(tunnelinfo->manage_bev);
+		tunnelinfo->manage_bev = NULL;
 		msglog(eMSGTYPE::DEBUG, "proxy manager connection deleted, idled for 10 sec.");
 	}
 
-	if (manage_bev == NULL) {
-		manage_bev = le_connect(host2ip(manageip), portManage, 0);
-		if (manage_bev == NULL) {
+	if (tunnelinfo->manage_bev == NULL) {
+		tunnelinfo->manage_bev = le_connect(host2ip(tunnelinfo->manageip), tunnelinfo->manageport, 0);
+		if (tunnelinfo->manage_bev == NULL) {
 			msglog(eMSGTYPE::ERROR, "le_connect failed, %s (%d).", __func__, __LINE__);
 			return;
 		}
-		bufferevent_setcb(manage_bev, le_manage_readcb, NULL, le_manage_eventcb, NULL);
+		bufferevent_setcb(tunnelinfo->manage_bev, le_manage_readcb, NULL, le_manage_eventcb, arg);
 	}
 	else {
 		_PckCmd pMsg = { 0 };
@@ -282,7 +322,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 		pMsg.len = sizeof(pMsg);
 		pMsg.cmd = 0xA2;
 		pMsg.data = 1;
-		if (bufferevent_write(manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
+		if (bufferevent_write(tunnelinfo->manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
 			msglog(eMSGTYPE::ERROR, "bufferevent_write failed, %s (%d).", __func__, __LINE__);
 		}
 		msglog(eMSGTYPE::DEBUG, "Tunnel sent keep alive packet.");
@@ -292,21 +332,23 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 static void
 le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
+	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)user_data;
+
 	if (events & BEV_EVENT_EOF)
 	{
-		bufferevent_free(manage_bev);
-		manage_bev = NULL;
+		bufferevent_free(tunnelinfo->manage_bev);
+		tunnelinfo->manage_bev = NULL;
 		msglog(eMSGTYPE::DEBUG, "disconnected from proxy manager (EOF).");
 	}
 	else if (events & BEV_EVENT_ERROR)
 	{
-		bufferevent_free(manage_bev);
-		manage_bev = NULL;
+		bufferevent_free(tunnelinfo->manage_bev);
+		tunnelinfo->manage_bev = NULL;
 		msglog(eMSGTYPE::DEBUG, "disconnected from proxy manager (ERROR).");
 	}
 	else if (events & BEV_EVENT_CONNECTED)
 	{
-		manager_tick = GetTickCount64();
+		tunnelinfo->manager_tick = GetTickCount64();
 		msglog(eMSGTYPE::DEBUG, "connected to proxy manager.");
 	}
 }
@@ -359,6 +401,3 @@ static void signal_handler(int signal)
 {
 	event_base_loopbreak(base);
 }
-
-
-

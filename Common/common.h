@@ -29,6 +29,7 @@
 
 #ifdef _WIN32
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define YAML_CPP_STATIC_DEFINE
 #include <winsock2.h>
 #pragma comment(lib,"Ws2_32.lib")
 #else
@@ -54,10 +55,10 @@
 #include <map>
 #include <vector>
 
-#define TUNNEL_PROXY_VER_MAJOR 1
-#define TUNNEL_PROXY_VER_MINOR 2
-#define TUNNEL_PROXY_VER_REV 6
-#define TUNNEL_PROXY_VER_STG "-rc.4"
+#define TUNNEL_PROXY_VER_MAJOR 2
+#define TUNNEL_PROXY_VER_MINOR 0
+#define TUNNEL_PROXY_VER_REV 0
+#define TUNNEL_PROXY_VER_STG "-rc.5"
 
 #ifndef _WIN32
 #define DWORD unsigned int
@@ -93,7 +94,7 @@ struct _PckCmd
 };
 
 
-#define LOGTYPEENABLED  ((DWORD)eMSGTYPE::INFO | (DWORD)eMSGTYPE::ERROR | (DWORD)eMSGTYPE::DEBUG)
+extern DWORD LOGTYPEENABLED;
 
 void msglog(BYTE type, const char* msg, ...);
 DWORD host2ip(const char* hostname);
