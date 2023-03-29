@@ -80,8 +80,8 @@ Run tunnel_proxy in your online VPS (required ports opened)
       - Proxy Name: "HA Proxy"
         Max Tunnels: 10
         Min Tunnels: 5
-        Manage Port: 4000
-        Tunnel Port: 4001
+        Manage Port: 4004
+        Tunnel Port: 4005
         Proxy Port: 8123
 
 
