@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="tunnels.cpp">
+    <ClCompile Include="..\tunnel_proxieswin\tunnel_proxies.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
