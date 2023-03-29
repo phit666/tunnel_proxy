@@ -28,6 +28,9 @@
 
 #include "common.h"
 
+DWORD LOGTYPEENABLED = ((DWORD)eMSGTYPE::INFO | (DWORD)eMSGTYPE::ERROR);// | (DWORD)eMSGTYPE::DEBUG);
+
+
 void msglog(BYTE type, const char* msg, ...) {
 
 	if (!(LOGTYPEENABLED & (DWORD)type))

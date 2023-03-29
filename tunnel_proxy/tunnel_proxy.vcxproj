@@ -90,7 +90,7 @@
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
-      <LibraryDependencies>event</LibraryDependencies>
+      <LibraryDependencies>event;yaml-cpp</LibraryDependencies>
       <AdditionalOptions>-static %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile>
