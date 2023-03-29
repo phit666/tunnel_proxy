@@ -1,5 +1,5 @@
 # Tunnel Proxy
-Access your home device's services (device web portals, remote dekstop, home assistant, WOL to turn on your computer etc..) anywhere without a need of public IP nor deal with router configs for port forwarding.
+This will let your local services be online without opening a port in your main host's firewall, it simply means you can access a service like your home's remote desktop anywhere even if your internet is not public and it can also secure a server by not exposing it's IP address as you can let a dummy host handle the request.
 
 # tunnel
 This is console program you will run locally in the same network as your local/internal server, this program will create a network tunnel between the local server and tunnel_proxy.
@@ -50,6 +50,7 @@ All ports of tunnel_proxy should be opened in the firewall.
         Proxy Port: 33892
 
 # Example
+
 Let say you have a Home Assistant server (Debian Linux OS) in your house and you don't have a public IP but you have cheap VPS running in Linux online with public IP 139.88.23.50, now to make your Home Assistant server be accessible online...
 
 Run tunnel within your local network preferrably  in the Home Assistant server.
@@ -85,3 +86,4 @@ Run tunnel_proxy in your online VPS (required ports opened)
 
 
 Now you can access your Home Assistant server with browser or mobile app with address http://139.88.23.50:8123
+
