@@ -6,7 +6,7 @@ This is console program you will run locally in the same network as your local/i
 
 ]$ tunnel
 
-*Yaml Configs*
+*tunnel.yaml*
 
     Debug Message: true #Show debug messages in console
     Tunnel Servers:
@@ -32,7 +32,7 @@ All ports of tunnel_proxy should be opened in the firewall.
 
 ]$ tunnel_proxy
 
-*Yaml Configs*
+*tunnel_proxy.yaml*
 
     Debug Message: true
     Proxy Servers:
@@ -56,7 +56,7 @@ Run tunnel within your local network preferrably  in the Home Assistant server.
 
 ]$ tunnel
 
-*Yaml Configs*
+*tunnel.yaml*
 
     Debug Message: false
     Tunnel Servers:
@@ -72,7 +72,7 @@ Run tunnel_proxy in your online VPS (required ports opened)
 
 ]$ tunnel_proxy
 
-*Yaml Configs*
+*tunnel_proxy.yaml*
 
     Debug Message: false
     Proxy Servers:
