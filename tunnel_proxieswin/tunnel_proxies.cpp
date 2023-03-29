@@ -103,8 +103,8 @@ static void le_timercb(evutil_socket_t, short, void*);
 
 static _BEVINFO* getbevinfomap(intptr_t fd_index);
 static void delbevmap(intptr_t fd_index);
-static int countbevmapidle();
-static intptr_t getidlemap();
+static int countbevmapidle(int port);
+static intptr_t getidlemap(int port);
 static void flagusebevmap(intptr_t fd_index);
 static int reqmanager(struct bufferevent* bev, eREQTYPE reqtype, int data);
 
@@ -333,7 +333,7 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 
 	if (tunnelproxyinfo->manage_bev != NULL) {
 
-		int idlecounts = countbevmapidle();
+		int idlecounts = countbevmapidle(tunnelproxyinfo->tunnel_port);
 		if (idlecounts < tunnelproxyinfo->min_tunnels) {
 			if (reqmanager(tunnelproxyinfo->manage_bev, eREQTYPE::CREATE_TUNNEL, tunnelproxyinfo->max_tunnels - tunnelproxyinfo->min_tunnels) == 0) {
 				msglog(eMSGTYPE::DEBUG, "%s Proxy manager requested for %d tunnels.", tunnelproxyinfo->name, tunnelproxyinfo->max_tunnels - tunnelproxyinfo->min_tunnels);
@@ -492,7 +492,7 @@ static void le_proxylistener_cb(struct evconnlistener* listener, evutil_socket_t
 
 	msglog(eMSGTYPE::DEBUG, "%s Client connection accepted...", tunnelproxyinfo->name);
 
-	int idlecountmap = countbevmapidle();
+	int idlecountmap = countbevmapidle(tunnelproxyinfo->tunnel_port);
 
 	msglog(eMSGTYPE::DEBUG, "%s Current available tunnel count is %d.", tunnelproxyinfo->name, idlecountmap);
 
@@ -503,7 +503,7 @@ static void le_proxylistener_cb(struct evconnlistener* listener, evutil_socket_t
 		}
 		else {
 			if (reqmanager(tunnelproxyinfo->manage_bev, eREQTYPE::CREATE_TUNNEL, 1) == 0) {
-				msglog(eMSGTYPE::DEBUG, "Proxy manager requested for %d tunnels.", 1);
+				msglog(eMSGTYPE::DEBUG, "%s Proxy manager requested for %d tunnels.", tunnelproxyinfo->name, 1);
 			}
 			// there has no tunnel available atm., lets add this in the waiting list for now...
 			tunnelproxyinfo->vBevWaitin.push_back(proxy_bev);
@@ -514,7 +514,7 @@ static void le_proxylistener_cb(struct evconnlistener* listener, evutil_socket_t
 
 
 	// bridge proxy and tunnel
-	intptr_t idleindex = getidlemap();
+	intptr_t idleindex = getidlemap(tunnelproxyinfo->tunnel_port);
 	if (idleindex == -1)
 		return;
 
@@ -571,7 +571,7 @@ le_eventcb(struct bufferevent* bev, short events, void* user_data)
 
 		delbevmap(fd_index);
 
-		int idlecountmap = countbevmapidle();
+		int idlecountmap = countbevmapidle(bevinfo->tunnelproxyinfo->tunnel_port);
 
 		msglog(eMSGTYPE::DEBUG, "%s Deleted map index %d, idle count now is %d.", bevinfo->tunnelproxyinfo->name, (int)fd_index, idlecountmap);
 		delete bevinfo;
@@ -620,21 +620,21 @@ static void flagusebevmap(intptr_t fd_index) {
 	}
 }
 
-static int countbevmapidle() {
+static int countbevmapidle(int port) {
 	int idelctr = 0;
 	std::map <intptr_t, _BEVINFO*>::iterator iter;
 	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
-		if (iter->second->status == 0) {
+		if (iter->second->status == 0 && iter->second->tunnelproxyinfo->tunnel_port == port) {
 			idelctr++;
 		}
 	}
 	return idelctr;
 }
 
-static intptr_t getidlemap() {
+static intptr_t getidlemap(int port) {
 	std::map <intptr_t, _BEVINFO*>::iterator iter;
 	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
-		if (iter->second->status == 0) {
+		if (iter->second->status == 0 && iter->second->tunnelproxyinfo->tunnel_port == port) {
 			return iter->first;
 		}
 	}

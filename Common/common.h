@@ -56,8 +56,8 @@
 
 #define TUNNEL_PROXY_VER_MAJOR 1
 #define TUNNEL_PROXY_VER_MINOR 2
-#define TUNNEL_PROXY_VER_REV 4
-#define TUNNEL_PROXY_VER_STG "-rc.2"
+#define TUNNEL_PROXY_VER_REV 5
+#define TUNNEL_PROXY_VER_STG "-rc.3"
 
 #ifndef _WIN32
 #define DWORD unsigned int
