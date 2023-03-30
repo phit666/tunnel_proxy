@@ -115,7 +115,7 @@ int main()
 
 	try {
 
-		YAML::Node configs = YAML::LoadFile("tunnel.yaml");
+		YAML::Node configs = YAML::LoadFile("tunnel.yml");
 
 		if (configs["Debug Message"].as<bool>() == true) {
 			LOGTYPEENABLED |= eMSGTYPE::DEBUG;

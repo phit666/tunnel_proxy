@@ -146,7 +146,7 @@ int main()
 
 	try {
 
-		YAML::Node configs = YAML::LoadFile("tunnel_proxy.yaml");
+		YAML::Node configs = YAML::LoadFile("tunnel_proxy.yml");
 
 		if (configs["Debug Message"].as<bool>() == true) {
 			LOGTYPEENABLED |= eMSGTYPE::DEBUG;
