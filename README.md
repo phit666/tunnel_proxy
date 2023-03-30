@@ -11,12 +11,14 @@ This is console program you will run locally in the same network as your local/i
     Debug Message: true #Show debug messages in console
     Tunnel Servers:
       - Name: "Tunnel 1"
+        Enable: true #Enable/disable this tunnel.
         Manage IP: 135.99.89.14 #Server IP where you run tunnel_proxy
         Manage Port: 4004 #tunnel_proxy manage port
         Tunnel Port: 4005 #tunnel_proxy tunnel port
         Local Server IP: 127.0.0.1 #local IP of service you want to access
         Local Server Port: 3389 #port of the local service
       - Name: "Tunnel 2"
+        Enable: false
         Manage IP: 135.99.89.15
         Manage Port: 4000
         Tunnel Port: 4001
@@ -37,12 +39,14 @@ All ports of tunnel_proxy should be opened in the firewall.
     Debug Message: true
     Proxy Servers:
       - Proxy Name: "Proxy 1" 
+        Enable: true #Enable/disable this tunnel proxy.
         Max Tunnels: 3 #Max count of tunnels to be opened, service like HTTP should have atleast 5 as the web client is doing parallel request to web server.
         Min Tunnels: 1 #Low water mark of opened tunnels, when an open tunnel count is equal or below this then tunnel_proxy will request to open new tunnels to tunnel.
         Manage Port: 4000 #tunnel's manage port
         Tunnel Port: 4001 #tunnel's tunnel port
         Proxy Port: 33891 #Proxy port, this is the port the client will access.
       - Proxy Name: "Proxy 2"
+        Enable: false
         Max Tunnels: 3
         Min Tunnels: 1
         Manage Port: 4002

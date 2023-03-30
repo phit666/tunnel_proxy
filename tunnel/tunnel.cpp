@@ -126,7 +126,14 @@ int main()
 		YAML::iterator iter = tunnellist.begin();
 		while (iter != tunnellist.end()) {
 			const YAML::Node& _tunnelinfo = *iter;
+
+			if (_tunnelinfo["Enable"].as<bool>() == false) {
+				iter++;
+				continue;
+			}
+
 			_TunnelsInfo* tunnelinfo = new _TunnelsInfo;
+
 			memcpy(tunnelinfo->name, _tunnelinfo["Name"].as<std::string>().c_str(), sizeof(tunnelinfo->name));
 			tunnelinfo->manageport = _tunnelinfo["Manage Port"].as<int>();
 			memcpy(tunnelinfo->manageip, _tunnelinfo["Manage IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
@@ -157,8 +164,11 @@ int main()
 	std::vector<_TunnelsInfo*>::iterator viter = vTunnels.begin();
 	while (viter != vTunnels.end()) {
 		_TunnelsInfo* _tunneninfo = *viter;
-		event_del(_tunneninfo->timeout);
-		event_free(_tunneninfo->timeout);
+
+		if (_tunneninfo->timeout != NULL) {
+			event_del(_tunneninfo->timeout);
+			event_free(_tunneninfo->timeout);
+		}
 
 		if (_tunneninfo->manage_bev != NULL)
 			bufferevent_free(_tunneninfo->manage_bev);

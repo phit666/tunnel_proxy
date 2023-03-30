@@ -158,6 +158,11 @@ int main()
 		while (iter != proxylist.end()) {
 			const YAML::Node& proxyinfo = *iter;
 
+			if (proxyinfo["Enable"].as<bool>() == false) {
+				iter++;
+				continue;
+			}
+
 			_TunnelProxiesInfo* tunnelproxyinfo = new _TunnelProxiesInfo;
 
 			memcpy(tunnelproxyinfo->name, proxyinfo["Proxy Name"].as<std::string>().c_str(), sizeof(tunnelproxyinfo->name));
@@ -248,11 +253,18 @@ int main()
 	std::vector <_TunnelProxiesInfo*>::iterator viter;
 	for (viter = vTunnelProxies.begin(); viter != vTunnelProxies.end(); viter++) {
 		_TunnelProxiesInfo* _tunnelproxyinfo = *viter;
-		event_del(_tunnelproxyinfo->timeout);
-		event_free(_tunnelproxyinfo->timeout);
-		evconnlistener_free(_tunnelproxyinfo->manage_listener);
-		evconnlistener_free(_tunnelproxyinfo->tunnel_listener);
-		evconnlistener_free(_tunnelproxyinfo->proxy_listener);
+
+		if (_tunnelproxyinfo->timeout != NULL) {
+			event_del(_tunnelproxyinfo->timeout);
+			event_free(_tunnelproxyinfo->timeout);
+		}
+
+		if(_tunnelproxyinfo->manage_listener != NULL)
+			evconnlistener_free(_tunnelproxyinfo->manage_listener);
+		if (_tunnelproxyinfo->tunnel_listener != NULL)
+			evconnlistener_free(_tunnelproxyinfo->tunnel_listener);
+		if (_tunnelproxyinfo->proxy_listener != NULL)
+			evconnlistener_free(_tunnelproxyinfo->proxy_listener);
 
 		std::vector <struct bufferevent*>::iterator _viter;
 		for (_viter = _tunnelproxyinfo->vBevWaitin.begin(); _viter != _tunnelproxyinfo->vBevWaitin.end(); _viter++) {
