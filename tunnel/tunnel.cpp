@@ -29,69 +29,50 @@
 #include "common.h"
 #include <yaml-cpp/yaml.h>
 
-struct _BEVINFO
-{
-	struct bufferevent* proxy_bev;
-	struct bufferevent* tunnel_bev;
-};
-
-struct bufferevent* le_connect(DWORD ip, WORD port, int index);
+struct bufferevent* le_connect(DWORD ip, WORD port);
 static void signal_handler(int signal);
-static void le_proxy_readcb(struct bufferevent*, void*);
-static void le_tunnel_readcb(struct bufferevent*, void*);
-static void le_manage_readcb(struct bufferevent*, void*);
+static void le_readcb(struct bufferevent*, void*);
 static void le_eventcb(struct bufferevent*, short, void*);
-static void le_manage_eventcb(struct bufferevent*, short, void*);
-static void le_timercb(evutil_socket_t, short, void*);
+
+static void le_proxylistener_cb(struct evconnlistener*, evutil_socket_t,
+	struct sockaddr*, int socklen, void*);
 
 struct event_base* base;
-
-static _BEVINFO* getbevinfomap(intptr_t fd_index);
-static void delbevmap(intptr_t fd_index);
-static std::map <intptr_t, _BEVINFO*> gBevMap;
 
 struct _TunnelsInfo
 {
 	_TunnelsInfo()
 	{
 		memset(name, 0, sizeof(name));
-		timeout = NULL;
-		memset(manageip, 0, sizeof(manageip));
-		manageport = -1;
-		tunnelport = -1;
+		memset(proxyip, 0, sizeof(proxyip));
+		proxyport = -1;
 		memset(local_serverip, 0, sizeof(local_serverip));
 		local_serverport = -1;
-		manage_bev = NULL;
-		manager_tick = 0;
+		proxy_listener = NULL;
 	}
 
-	struct event* timeout;
 	char name[50];
-	char manageip[16];
-	int manageport;
-	int tunnelport;
+	char proxyip[16];
+	int proxyport;
 	char local_serverip[16];
 	int local_serverport;
-	struct bufferevent* manage_bev;
-	unsigned long long manager_tick;
+	struct evconnlistener* proxy_listener;
 };
 
 static std::vector< _TunnelsInfo*> vTunnels;
 
 int main()
 {
-	struct timeval tv;
+	struct sockaddr_in sin;
 
 	std::signal(SIGINT, signal_handler);
-
-	gBevMap.clear();
 
 #ifdef _WIN32
 	SYSTEM_INFO SystemInfo;
 	WORD wVersionRequested;
 	WSADATA wsaData;
 	wVersionRequested = MAKEWORD(2, 2);
-	WSAStartup(wVersionRequested, &wsaData);
+	int ret = WSAStartup(wVersionRequested, &wsaData);
 
 	GetSystemInfo(&SystemInfo);
 	evthread_use_windows_threads();
@@ -105,48 +86,68 @@ int main()
 	base = event_base_new();
 #endif
 
-	msglog(eMSGTYPE::INFO, "Tunnel Proxy %d.%d.%d.%s, socket backend is %s.",
+	msglog(eMSGTYPE::INFO, "Proxy Server %d.%d.%d.%s, socket backend is %s.",
 		TUNNEL_PROXY_VER_MAJOR,
 		TUNNEL_PROXY_VER_MINOR,
 		TUNNEL_PROXY_VER_REV,
 		TUNNEL_PROXY_VER_STG,
 		event_base_get_method(base));
 
-
 	try {
 
-		YAML::Node configs = YAML::LoadFile("tunnel.yml");
+		YAML::Node configs = YAML::LoadFile("proxy.yaml");
 
 		if (configs["Debug Message"].as<bool>() == true) {
 			LOGTYPEENABLED |= eMSGTYPE::DEBUG;
+			msglog(eMSGTYPE::INFO, "Debug message is enabled.");
 		}
 
-		YAML::Node tunnellist = configs["Tunnel Servers"];
+		YAML::Node tunnellist = configs["Proxy  Servers"];
+
+		msglog(eMSGTYPE::DEBUG, "Proxy server count is %d.", tunnellist.size());
 
 		YAML::iterator iter = tunnellist.begin();
-		while (iter != tunnellist.end()) {
-			const YAML::Node& _tunnelinfo = *iter;
 
-			if (_tunnelinfo["Enable"].as<bool>() == false) {
-				iter++;
-				continue;
-			}
+		while (iter != tunnellist.end()) 
+		{
+			const YAML::Node& _tunnelinfo = *iter;
 
 			_TunnelsInfo* tunnelinfo = new _TunnelsInfo;
 
 			memcpy(tunnelinfo->name, _tunnelinfo["Name"].as<std::string>().c_str(), sizeof(tunnelinfo->name));
-			tunnelinfo->manageport = _tunnelinfo["Manage Port"].as<int>();
-			memcpy(tunnelinfo->manageip, _tunnelinfo["Manage IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
-			tunnelinfo->tunnelport = _tunnelinfo["Tunnel Port"].as<int>();
+			tunnelinfo->proxyport = _tunnelinfo["Proxy Port"].as<int>();
+			memcpy(tunnelinfo->proxyip, _tunnelinfo["Proxy IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
 			tunnelinfo->local_serverport = _tunnelinfo["Local Server Port"].as<int>();
 			memcpy(tunnelinfo->local_serverip, _tunnelinfo["Local Server IP"].as<std::string>().c_str(), sizeof(tunnelinfo->local_serverip));
 
-			tunnelinfo->timeout = event_new(base, -1, EV_PERSIST, le_timercb, (void*)tunnelinfo);
-			evutil_timerclear(&tv);
-			tv.tv_sec = 2;
-			event_add(tunnelinfo->timeout, &tv);
+			if (_tunnelinfo["Enable"].as<bool>() == false) {
+				iter++;
+				msglog(eMSGTYPE::DEBUG, "Proxy server %s is disabled.", tunnelinfo->name);
+				continue;
+			}
+
+			msglog(eMSGTYPE::INFO, "%s Proxy Server IP %s.", tunnelinfo->name, tunnelinfo->proxyip);
+
+			memset(&sin, 0, sizeof(sin));
+			sin.sin_family = AF_INET;
+			sin.sin_addr.s_addr = htonl(host2ip(tunnelinfo->proxyip));
+			sin.sin_port = htons(tunnelinfo->proxyport);
+
+			tunnelinfo->proxy_listener = evconnlistener_new_bind(base, le_proxylistener_cb, (void*)tunnelinfo,
+				LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE, -1,
+				(struct sockaddr*)&sin,
+				sizeof(sin));
+
+			if (!tunnelinfo->proxy_listener) {
+				msglog(eMSGTYPE::ERROR, "evconnlistener_new_bind failed at port %d, %s (%d).", tunnelinfo->proxyport, __func__, __LINE__);
+				event_base_free(base);
+				return -1;
+			}
+
+			msglog(eMSGTYPE::INFO, "%s Proxy Server is listening to proxy port %d.", tunnelinfo->name, tunnelinfo->proxyport);
 
 			vTunnels.push_back(tunnelinfo);
+
 			iter++;
 		}
 	}
@@ -159,42 +160,16 @@ int main()
 		return -1;
 	}
 
-	event_base_dispatch(base);
+	event_base_loop(base, EVLOOP_NO_EXIT_ON_EMPTY);
 
 	std::vector<_TunnelsInfo*>::iterator viter = vTunnels.begin();
 	while (viter != vTunnels.end()) {
 		_TunnelsInfo* _tunneninfo = *viter;
-
-		if (_tunneninfo->timeout != NULL) {
-			event_del(_tunneninfo->timeout);
-			event_free(_tunneninfo->timeout);
-		}
-
-		if (_tunneninfo->manage_bev != NULL)
-			bufferevent_free(_tunneninfo->manage_bev);
-
 		delete _tunneninfo;
 		viter++;
 	}
 
 	vTunnels.clear();
-
-
-	std::map <intptr_t, _BEVINFO*>::iterator iter;
-	for (iter = gBevMap.begin(); iter != gBevMap.end(); iter++) {
-		if (iter->second->proxy_bev != NULL)
-			bufferevent_free(iter->second->proxy_bev);
-		if (iter->second->tunnel_bev != NULL)
-			bufferevent_free(iter->second->tunnel_bev);
-
-		delete iter->second;
-
-		msglog(eMSGTYPE::DEBUG, "Exit cleanup, deleted map index %d.", (int)iter->first);
-
-	}
-
-	gBevMap.clear();
-
 
 	event_base_free(base);
 
@@ -207,7 +182,42 @@ int main()
 	return 0;
 }
 
-struct bufferevent* le_connect(DWORD ip, WORD port, int index)
+static void le_proxylistener_cb(struct evconnlistener* listener, evutil_socket_t fd,
+	struct sockaddr* sa, int socklen, void* user_data) {
+
+	_TunnelsInfo* tunnelproxyinfo = (_TunnelsInfo*)user_data;
+	struct bufferevent* proxy_bev;
+
+	proxy_bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE
+#ifdef _WIN32
+		| BEV_OPT_THREADSAFE
+#endif
+	);
+
+	if (!proxy_bev)
+	{
+		msglog(eMSGTYPE::ERROR, "%s bufferevent_socket_new failed, %s (%d).", tunnelproxyinfo->name, __func__, __LINE__);
+		return;
+	}
+
+	msglog(eMSGTYPE::DEBUG, "%s Client connection accepted...", tunnelproxyinfo->name);
+
+	bufferevent* local_bev = le_connect(host2ip(tunnelproxyinfo->local_serverip), tunnelproxyinfo->local_serverport);
+
+	if (local_bev == NULL) {
+		bufferevent_free(proxy_bev);
+		return;
+	}
+
+	bufferevent_setcb(proxy_bev, le_readcb, NULL, le_eventcb, (void*)local_bev);
+	bufferevent_setcb(local_bev, le_readcb, NULL, le_eventcb, (void*)proxy_bev);
+
+
+	bufferevent_enable(proxy_bev, EV_READ | EV_WRITE);
+	bufferevent_enable(local_bev, EV_READ | EV_WRITE);
+}
+
+struct bufferevent* le_connect(DWORD ip, WORD port)
 {
 	struct sockaddr_in remote_address;
 	int result;
@@ -234,188 +244,34 @@ struct bufferevent* le_connect(DWORD ip, WORD port, int index)
 		msglog(eMSGTYPE::ERROR, "bufferevent_socket_connect failed, %s (%d).", __func__, __LINE__);
 		return NULL;
 	}
-
-	bufferevent_enable(_bev, EV_WRITE);
-	bufferevent_enable(_bev, EV_READ);
 	return _bev;
 }
 
-static void
-le_manage_readcb(struct bufferevent* _bev, void* user_data)
-{
-	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)user_data;
-
-	char buffer[8192] = { 0 };
-	int len = bufferevent_read(_bev, (char*)buffer, 8192);
-
-	if (len < 2)
-		return;
-
-	_PckCmd* lpMsg = (_PckCmd*)buffer;
-
-	if (lpMsg->cmd == eREQTYPE::CREATE_TUNNEL) {
-
-		msglog(eMSGTYPE::DEBUG, "%s proxy requested for %d tunnels.", tunnelinfo->name, lpMsg->data);
-
-		// lets spawn the requested idle tunnels
-		for (int i = 0; i < lpMsg->data; i++) {
-
-			struct bufferevent* _bev1 = le_connect(host2ip(tunnelinfo->manageip), tunnelinfo->tunnelport, 1);
-
-			if (_bev1 == NULL) {
-				msglog(eMSGTYPE::ERROR, "%s le_connect failed, %s (%d).", tunnelinfo->name, __func__, __LINE__);
-				return;
-			}
-
-			struct bufferevent* _bev2 = le_connect(host2ip(tunnelinfo->local_serverip), tunnelinfo->local_serverport, 2);
-
-			if (_bev2 == NULL) {
-				msglog(eMSGTYPE::ERROR, "%s le_connect failed, %s (%d).", tunnelinfo->name, __func__, __LINE__);
-				bufferevent_free(_bev1);
-				return;
-			}
-
-			intptr_t fd_index = bufferevent_getfd(_bev1);
-			_BEVINFO* bevinfo = new _BEVINFO;
-			bevinfo->proxy_bev = _bev1;
-			bevinfo->tunnel_bev = _bev2;
-			gBevMap[fd_index] = bevinfo;
-
-			// bridge the two sockets
-			bufferevent_setcb(_bev1, le_proxy_readcb, NULL, le_eventcb, (void*)fd_index);
-			bufferevent_setcb(_bev2, le_tunnel_readcb, NULL, le_eventcb, (void*)fd_index);
-		}
-	}
-	else if (lpMsg->cmd == eREQTYPE::KEEP_ALIVE && lpMsg->data == 2) {
-		tunnelinfo->manager_tick = GetTickCount64();
-		//msglog(eMSGTYPE::DEBUG, "Tunnel received keep alive packet.");
-	}
-}
 
 static void
-le_tunnel_readcb(struct bufferevent* _bev, void* user_data)
+le_readcb(struct bufferevent* bev, void* user_data)
 {
-	intptr_t fd_index = (intptr_t)user_data;
-	_BEVINFO* bevinfo = getbevinfomap(fd_index);
-	if (bevinfo == NULL)
-		return;
-	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->proxy_bev)) == -1) {
+	bufferevent* _bev = (bufferevent*)user_data;
+	if (bufferevent_read_buffer(bev, bufferevent_get_output(_bev)) == -1) {
 		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer failed, %s (%d).", __func__, __LINE__);
-		return;
-	}
-}
-
-static void
-le_proxy_readcb(struct bufferevent* _bev, void* user_data)
-{
-	intptr_t fd_index = (intptr_t)user_data;
-	_BEVINFO* bevinfo = getbevinfomap(fd_index);
-	if (bevinfo == NULL)
-		return;
-	if (bufferevent_read_buffer(_bev, bufferevent_get_output(bevinfo->tunnel_bev)) == -1) {
-		msglog(eMSGTYPE::ERROR, "bufferevent_read_buffer Error, %s (%d).", __func__, __LINE__);
-		return;
-	}
-}
-
-static void le_timercb(evutil_socket_t fd, short event, void* arg)
-{
-	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)arg;
-
-	if (tunnelinfo->manage_bev != NULL && GetTickCount64() - tunnelinfo->manager_tick >= 10000) {
-		bufferevent_free(tunnelinfo->manage_bev);
-		tunnelinfo->manage_bev = NULL;
-		msglog(eMSGTYPE::DEBUG, "%s proxy manager connection deleted, idled for 10 sec.", tunnelinfo->name);
-	}
-
-	if (tunnelinfo->manage_bev == NULL) {
-		tunnelinfo->manage_bev = le_connect(host2ip(tunnelinfo->manageip), tunnelinfo->manageport, 0);
-		if (tunnelinfo->manage_bev == NULL) {
-			msglog(eMSGTYPE::ERROR, "%s le_connect failed, %s (%d).", tunnelinfo->name, __func__, __LINE__);
-			return;
-		}
-		bufferevent_setcb(tunnelinfo->manage_bev, le_manage_readcb, NULL, le_manage_eventcb, arg);
-	}
-	else {
-		_PckCmd pMsg = { 0 };
-		pMsg.head = 0xC1;
-		pMsg.len = sizeof(pMsg);
-		pMsg.cmd = 0xA2;
-		pMsg.data = 1;
-		if (bufferevent_write(tunnelinfo->manage_bev, (unsigned char*)&pMsg, pMsg.len) == -1) {
-			msglog(eMSGTYPE::ERROR, "%s bufferevent_write failed, %s (%d).", tunnelinfo->name, __func__, __LINE__);
-		}
-		//msglog(eMSGTYPE::DEBUG, "Tunnel sent keep alive packet.");
-	}
-}
-
-static void
-le_manage_eventcb(struct bufferevent* bev, short events, void* user_data)
-{
-	_TunnelsInfo* tunnelinfo = (_TunnelsInfo*)user_data;
-
-	if (events & BEV_EVENT_EOF)
-	{
-		bufferevent_free(tunnelinfo->manage_bev);
-		tunnelinfo->manage_bev = NULL;
-		msglog(eMSGTYPE::DEBUG, "%s disconnected from proxy manager (EOF).", tunnelinfo->name);
-	}
-	else if (events & BEV_EVENT_ERROR)
-	{
-		bufferevent_free(tunnelinfo->manage_bev);
-		tunnelinfo->manage_bev = NULL;
-		msglog(eMSGTYPE::DEBUG, "%s disconnected from proxy manager (ERROR).", tunnelinfo->name);
-	}
-	else if (events & BEV_EVENT_CONNECTED)
-	{
-		tunnelinfo->manager_tick = GetTickCount64();
-		msglog(eMSGTYPE::DEBUG, "%s connected to proxy manager.", tunnelinfo->name);
 	}
 }
 
 static void
 le_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
-	intptr_t fd_index = (intptr_t)user_data;
-	_BEVINFO* bevinfo = getbevinfomap(fd_index);
+	bufferevent* _bev = (bufferevent*)user_data;
 	if (events & BEV_EVENT_EOF || events & BEV_EVENT_ERROR)
 	{
-		if (bevinfo == NULL) {
-			bufferevent_free(bev);
-			return;
-		}
-		if (bevinfo->proxy_bev != NULL)
-			bufferevent_free(bevinfo->proxy_bev);
-		if (bevinfo->tunnel_bev != NULL)
-			bufferevent_free(bevinfo->tunnel_bev);
-		delete bevinfo;
-		delbevmap(fd_index);
-
-		msglog(eMSGTYPE::DEBUG, "Deleted tunnel index %d.", (int)fd_index);
-
+		bufferevent_free(bev);
+		bufferevent_free(_bev);
+		msglog(eMSGTYPE::DEBUG, "Proxy disconnected.");
 	}
 	else if (events & BEV_EVENT_CONNECTED)
 	{
 	}
 }
 
-
-static _BEVINFO* getbevinfomap(intptr_t fd_index) {
-	std::map <intptr_t, _BEVINFO*>::iterator iter;
-	iter = gBevMap.find(fd_index);
-	if (iter != gBevMap.end()) {
-		return iter->second;
-	}
-	return NULL;
-}
-
-static void delbevmap(intptr_t fd_index) {
-	std::map <intptr_t, _BEVINFO*>::iterator iter;
-	iter = gBevMap.find(fd_index);
-	if (iter != gBevMap.end()) {
-		gBevMap.erase(iter);
-	}
-}
 
 static void signal_handler(int signal)
 {

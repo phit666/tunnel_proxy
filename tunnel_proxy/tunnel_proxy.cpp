@@ -52,6 +52,7 @@ struct _TunnelProxiesInfo
 	struct evconnlistener* tunnel_listener;
 	struct evconnlistener* proxy_listener;
 	struct event* timeout;
+	int idletimeoutsec;
 	int manage_port;
 	int tunnel_port;
 	int proxy_port;
@@ -171,6 +172,7 @@ int main()
 			tunnelproxyinfo->manage_port = proxyinfo["Manage Port"].as<int>();
 			tunnelproxyinfo->tunnel_port = proxyinfo["Tunnel Port"].as<int>();
 			tunnelproxyinfo->proxy_port = proxyinfo["Proxy Port"].as<int>();
+			tunnelproxyinfo->idletimeoutsec = proxyinfo["Idle Timeout Seconds"].as<int>();
 
 			memset(&sin, 0, sizeof(sin));
 			sin.sin_family = AF_INET;
@@ -321,7 +323,8 @@ static void le_timercb(evutil_socket_t fd, short event, void* arg)
 	std::map <intptr_t, _BEVINFO*>::iterator iter = gBevMap.begin();
 	while (iter != gBevMap.end()) {
 		if (iter->second->status == 1) {
-			if ((GetTickCount64() - iter->second->tick) >= 180000) {
+			if (iter->second->tunnelproxyinfo->idletimeoutsec != 0 && 
+				(GetTickCount64() - iter->second->tick) >= (iter->second->tunnelproxyinfo->idletimeoutsec * 1000)) {
 				if (iter->second->proxy_bev != NULL)
 					bufferevent_free(iter->second->proxy_bev);
 				if (iter->second->tunnel_bev != NULL)
