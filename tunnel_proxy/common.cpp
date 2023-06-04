@@ -1,6 +1,6 @@
 #include "common.h"
 #ifndef _WIN32
-#include <android/log.h>
+//#include <android/log.h>
 #else
 #include "LogToFile.h"
 #endif
@@ -50,7 +50,7 @@ void msglog(BYTE type, const char* msg, ...) {
 	curstrtime[strlen(curstrtime) - 1] = '\0';
 
 #ifndef _WIN32
-	__android_log_print(ANDROID_LOG_DEBUG, "TONGITS", "%s%s",curstrtime, szBuffer);
+	//__android_log_print(ANDROID_LOG_DEBUG, "TONGITS", "%s%s",curstrtime, szBuffer);
 #else
 	std::cout << curstrtime << szBuffer << std::endl;
 	tongitslog.Output(szBuffer);

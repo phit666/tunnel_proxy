@@ -3,7 +3,7 @@
   <PropertyGroup Label="Globals">
     <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
     <HasSharedItems>true</HasSharedItems>
-    <ItemsProjectGuid>{1675a876-571c-49cb-9858-db70bc0866f0}</ItemsProjectGuid>
+    <ItemsProjectGuid>{f884db52-48a3-48cb-a3d9-a861970393c3}</ItemsProjectGuid>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -15,8 +15,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(MSBuildThisFileDirectory)common.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)LogToFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)common.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)LogToFile.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)prodef.h" />
   </ItemGroup>
 </Project>

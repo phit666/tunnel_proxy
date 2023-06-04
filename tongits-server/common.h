@@ -26,9 +26,8 @@
 #include <event2/http.h>
 #include <evhttp.h>
 
-#ifdef _WIN32
 #include <yaml-cpp/yaml.h>
-#endif
+
 
 #include <chrono>
 #include <ctime>
